@@ -537,7 +537,6 @@ static guint suspend_gateway(struct media_transport *transport,
 		return 0;
 	}
 
-	gateway_suspend_stream(device);
 	g_idle_add(gateway_suspend_complete, owner);
 	return id++;
 }
