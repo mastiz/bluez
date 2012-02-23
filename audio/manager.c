@@ -1280,16 +1280,22 @@ void audio_manager_exit(void)
 	btd_unregister_device_driver(&audio_driver);
 }
 
-struct audio_device *manager_find_device(const char *path,
+GSList *manager_find_devices(const char *path,
 					const bdaddr_t *src,
 					const bdaddr_t *dst,
 					const char *interface,
-					gboolean connected)
+					gboolean connected,
+					size_t max_count)
 {
+	GSList *result = NULL;
+	size_t result_size = 0;
 	GSList *l;
 
 	for (l = devices; l != NULL; l = l->next) {
 		struct audio_device *dev = l->data;
+
+		if ((max_count > 0) && (result_size == max_count))
+			break;
 
 		if ((path && (strcmp(path, "")) && strcmp(dev->path, path)))
 			continue;
@@ -1323,10 +1329,29 @@ struct audio_device *manager_find_device(const char *path,
 		if (connected && !audio_device_is_active(dev, interface))
 			continue;
 
-		return dev;
+		result = g_slist_append(result, dev);
+		result_size ++;
 	}
 
-	return NULL;
+	return result;
+}
+
+struct audio_device *manager_find_device(const char *path,
+					const bdaddr_t *src,
+					const bdaddr_t *dst,
+					const char *interface,
+					gboolean connected)
+{
+	struct audio_device *result;
+	GSList *l;
+
+	l = manager_find_devices(path, src, dst, interface, connected, 1);
+	if (l == NULL)
+		return NULL;
+
+	result = l->data;
+	g_slist_free(l);
+	return result;
 }
 
 struct audio_device *manager_get_device(const bdaddr_t *src,
