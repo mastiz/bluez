@@ -709,26 +709,42 @@ static struct media_endpoint *media_endpoint_create(struct media_adapter *adapte
 			goto failed;
 	} else if (strcasecmp(uuid, HFP_AG_UUID) == 0 ||
 					strcasecmp(uuid, HSP_AG_UUID) == 0) {
-		struct audio_device *dev;
+		GSList *list;
+		GSList *l;
 
 		endpoint->hs_watch = headset_add_state_cb(headset_state_changed,
 								endpoint);
-		dev = manager_find_device(NULL, &adapter->src, BDADDR_ANY,
-						AUDIO_HEADSET_INTERFACE, TRUE);
-		if (dev)
+		list = manager_find_devices(NULL, &adapter->src, BDADDR_ANY,
+						AUDIO_HEADSET_INTERFACE, TRUE,
+						0);
+
+		for (l = list; l != NULL; l = l->next) {
+			struct audio_device *dev = l->data;
+
 			set_configuration(endpoint, dev, NULL, 0,
 						headset_setconf_cb, dev, NULL);
+		}
+
+		g_slist_free(list);
 	} else if (strcasecmp(uuid, HFP_HS_UUID) == 0 ||
 					strcasecmp(uuid, HSP_HS_UUID) == 0) {
-		struct audio_device *dev;
+		GSList *list;
+		GSList *l;
 
 		endpoint->ag_watch = gateway_add_state_cb(gateway_state_changed,
 								endpoint);
-		dev = manager_find_device(NULL, &adapter->src, BDADDR_ANY,
-						AUDIO_GATEWAY_INTERFACE, TRUE);
-		if (dev)
+		list = manager_find_devices(NULL, &adapter->src, BDADDR_ANY,
+						AUDIO_GATEWAY_INTERFACE, TRUE,
+						0);
+
+		for (l = list; l != NULL; l = l->next) {
+			struct audio_device *dev = l->data;
+
 			set_configuration(endpoint, dev, NULL, 0,
 						gateway_setconf_cb, dev, NULL);
+		}
+
+		g_slist_free(list);
 	} else {
 		if (err)
 			*err = -EINVAL;
