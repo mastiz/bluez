@@ -99,7 +99,15 @@ static void sco_server_cb(GIOChannel *chan, GError *err, gpointer data)
 	if (!device)
 		goto drop;
 
-	if (device->headset) {
+	if (device->gateway) {
+		if (!gateway_is_connected(device)) {
+			DBG("Refusing SCO from non-connected AG");
+			goto drop;
+		}
+
+		if (gateway_connect_sco(device, chan) < 0)
+			goto drop;
+	} else if (device->headset) {
 		if (headset_get_state(device) < HEADSET_STATE_CONNECTED) {
 			DBG("Refusing SCO from non-connected headset");
 			goto drop;
@@ -115,14 +123,6 @@ static void sco_server_cb(GIOChannel *chan, GError *err, gpointer data)
 			goto drop;
 
 		headset_set_state(device, HEADSET_STATE_PLAYING);
-	} else if (device->gateway) {
-		if (!gateway_is_connected(device)) {
-			DBG("Refusing SCO from non-connected AG");
-			goto drop;
-		}
-
-		if (gateway_connect_sco(device, chan) < 0)
-			goto drop;
 	} else
 		goto drop;
 
