@@ -497,6 +497,17 @@ static void driver_remove(struct btd_device_driver *driver,
 	device->drivers = g_slist_remove(device->drivers, driver);
 }
 
+static void driver_partial_remove(struct btd_device_driver *driver,
+						struct btd_device *device,
+						const char *uuid)
+{
+	if (driver->partial_remove != NULL)
+		if (driver->partial_remove(device, uuid) > 0)
+			return;
+
+	driver_remove(driver, device);
+}
+
 static gboolean do_disconnect(gpointer user_data)
 {
 	struct btd_device *device = user_data;
@@ -1349,9 +1360,7 @@ static void device_remove_drivers(struct btd_device *device, GSList *uuids)
 			DBG("UUID %s was removed from device %s",
 							*uuid, dstaddr);
 
-			driver->remove(device);
-			device->drivers = g_slist_remove(device->drivers,
-								driver);
+			driver_partial_remove(driver, device, *uuid);
 			break;
 		}
 	}

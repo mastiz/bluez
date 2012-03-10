@@ -107,6 +107,7 @@ struct btd_device_driver {
 	const char *name;
 	const char **uuids;
 	int (*probe) (struct btd_device *device, GSList *uuids);
+	int (*partial_remove) (struct btd_device *device, const char *uuid);
 	void (*remove) (struct btd_device *device);
 };
 
