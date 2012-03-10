@@ -791,6 +791,49 @@ static int audio_probe(struct btd_device *device, GSList *uuids)
 	return 0;
 }
 
+static int device_part_count(struct audio_device *dev)
+{
+	int count = 0;
+
+	count += dev->headset ? 1 : 0;
+	count += dev->gateway ? 1 : 0;
+	count += dev->sink ? 1 : 0;
+	count += dev->source ? 1 : 0;
+	count += dev->control ? 1 : 0;
+	count += dev->target ? 1 : 0;
+
+	return count;
+}
+
+static int audio_partial_remove(struct btd_device *device, const char *uuid)
+{
+	struct audio_device *dev;
+	const char *path;
+	int part_count;
+
+	path = device_get_path(device);
+
+	DBG("%s: remove uuid %s", path, uuid);
+
+	dev = manager_find_device(path, NULL, NULL, NULL, FALSE);
+	if (!dev)
+		return 0;
+
+	part_count = device_part_count(dev);
+
+	if ((dev->headset != NULL) && !g_strcmp0(uuid, HSP_HS_UUID)) {
+		headset_unregister(dev);
+		return part_count - 1;
+	}
+
+	if ((dev->gateway != NULL) && !g_strcmp0(uuid, HFP_AG_UUID)) {
+		gateway_unregister(dev);
+		return part_count - 1;
+	}
+
+	return part_count;
+}
+
 static void audio_remove(struct btd_device *device)
 {
 	struct audio_device *dev;
@@ -805,7 +848,6 @@ static void audio_remove(struct btd_device *device)
 	devices = g_slist_remove(devices, dev);
 
 	audio_device_unregister(dev);
-
 }
 
 static struct audio_adapter *audio_adapter_ref(struct audio_adapter *adp)
@@ -1107,6 +1149,7 @@ static struct btd_device_driver audio_driver = {
 			ADVANCED_AUDIO_UUID, A2DP_SOURCE_UUID, A2DP_SINK_UUID,
 			AVRCP_TARGET_UUID, AVRCP_REMOTE_UUID),
 	.probe	= audio_probe,
+	.partial_remove	= audio_partial_remove,
 	.remove	= audio_remove,
 };
 
