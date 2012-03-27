@@ -488,7 +488,7 @@ static void headset_resume_complete(struct audio_device *dev, void *user_data)
 	if (fd < 0)
 		goto fail;
 
-	imtu = 48;
+	imtu = 96;
 	omtu = 48;
 
 	media_transport_set_fd(transport, fd, imtu, omtu);
@@ -604,7 +604,7 @@ static void gateway_resume_complete(struct audio_device *dev, GError *err,
 	if (fd < 0)
 		goto fail;
 
-	imtu = 48;
+	imtu = 96;
 	omtu = 48;
 
 	media_transport_set_fd(transport, fd, imtu, omtu);
