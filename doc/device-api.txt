@@ -108,6 +108,29 @@ Signals		PropertyChanged(string name, variant value)
 			disconnection to a remote device has been requested.
 			The actual disconnection will happen 2 seconds later.
 
+		Disconnected(string reason) [experimental]
+
+			This signal will be sent when the low-level link
+			is disconnected, either because is was explicitly
+			requested (locally initiated) or not.
+
+			The actual reason of the disconnection is given by one
+			of the following values:
+
+				"unspecified": Reason unspecified or not
+						reported by kernel
+				"timeout": Connection timeout
+				"local": Connection terminated by local host
+				"remote": Connection terminated by remote host
+
+			Note that the local/remote distinction just determines
+			which side terminated the low-level connection,
+			regardless of the disconnection of the higher-level
+			profiles.
+
+			This signal will be sent just before the corresponding
+			state property change to "disconnected".
+
 		NodeCreated(object node)
 
 			Parameter is object path of created device node.
