@@ -90,7 +90,8 @@ int device_request_authentication(struct btd_device *device, auth_type_t type,
 void device_cancel_authentication(struct btd_device *device, gboolean aborted);
 gboolean device_is_authenticating(struct btd_device *device);
 void device_add_connection(struct btd_device *device, DBusConnection *conn);
-void device_remove_connection(struct btd_device *device, DBusConnection *conn);
+void device_remove_connection(struct btd_device *device, DBusConnection *conn,
+								uint8_t reason);
 void device_request_disconnect(struct btd_device *device, DBusMessage *msg);
 
 typedef void (*disconnect_watch) (struct btd_device *device, gboolean removal,

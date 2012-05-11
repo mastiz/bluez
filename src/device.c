@@ -920,7 +920,8 @@ void device_add_connection(struct btd_device *device, DBusConnection *conn)
 					DBUS_TYPE_BOOLEAN, &device->connected);
 }
 
-void device_remove_connection(struct btd_device *device, DBusConnection *conn)
+void device_remove_connection(struct btd_device *device, DBusConnection *conn,
+								uint8_t reason)
 {
 	if (!device->connected) {
 		char addr[18];

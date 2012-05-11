@@ -3072,7 +3072,7 @@ void adapter_remove_connection(struct btd_adapter *adapter,
 		return;
 	}
 
-	device_remove_connection(device, connection);
+	device_remove_connection(device, connection, reason);
 
 	adapter->connections = g_slist_remove(adapter->connections, device);
 
