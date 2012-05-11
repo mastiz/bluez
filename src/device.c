@@ -896,6 +896,7 @@ static const GDBusSignalTable device_signals[] = {
 	{ GDBUS_SIGNAL("PropertyChanged",
 			GDBUS_ARGS({ "name", "s" }, { "value", "v" })) },
 	{ GDBUS_SIGNAL("DisconnectRequested", NULL) },
+	{ GDBUS_SIGNAL("Disconnected", GDBUS_ARGS({ "reason", "s" })) },
 	{ }
 };
 
@@ -923,6 +924,8 @@ void device_add_connection(struct btd_device *device, DBusConnection *conn)
 void device_remove_connection(struct btd_device *device, DBusConnection *conn,
 								uint8_t reason)
 {
+	const char *str;
+
 	if (!device->connected) {
 		char addr[18];
 		ba2str(&device->bdaddr, addr);
@@ -946,6 +949,25 @@ void device_remove_connection(struct btd_device *device, DBusConnection *conn,
 
 	if (device_is_paired(device) && !device_is_bonded(device))
 		device_set_paired(device, FALSE);
+
+	switch (reason) {
+	case MGMT_DEV_DISCONN_TIMEOUT:
+		str = "timeout";
+		break;
+	case MGMT_DEV_DISCONN_LOCAL_HOST:
+		str = "local";
+		break;
+	case MGMT_DEV_DISCONN_REMOTE:
+		str = "remote";
+		break;
+	default:
+		str = "unspecified";
+		break;
+	}
+
+	g_dbus_emit_signal(conn, device->path, DEVICE_INTERFACE,
+					"Disconnected", DBUS_TYPE_STRING, &str,
+					DBUS_TYPE_INVALID);
 
 	emit_property_changed(conn, device->path,
 					DEVICE_INTERFACE, "Connected",
