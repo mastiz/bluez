@@ -128,7 +128,7 @@ struct agent *adapter_get_agent(struct btd_adapter *adapter);
 void adapter_add_connection(struct btd_adapter *adapter,
 						struct btd_device *device);
 void adapter_remove_connection(struct btd_adapter *adapter,
-						struct btd_device *device);
+				struct btd_device *device, uint8_t reason);
 gboolean adapter_has_discov_sessions(struct btd_adapter *adapter);
 
 struct btd_adapter *btd_adapter_ref(struct btd_adapter *adapter);

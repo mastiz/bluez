@@ -34,6 +34,8 @@
 #include <sys/ioctl.h>
 
 #include <bluetooth/bluetooth.h>
+#include <bluetooth/hci.h>
+#include <bluetooth/mgmt.h>
 #include <bluetooth/uuid.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
@@ -2368,7 +2370,8 @@ int btd_adapter_stop(struct btd_adapter *adapter)
 
 	while (adapter->connections) {
 		struct btd_device *device = adapter->connections->data;
-		adapter_remove_connection(adapter, device);
+		adapter_remove_connection(adapter, device,
+						MGMT_DEV_DISCONN_LOCAL_HOST);
 	}
 
 	if (adapter->scan_mode == (SCAN_PAGE | SCAN_INQUIRY))
@@ -3060,7 +3063,7 @@ void adapter_add_connection(struct btd_adapter *adapter,
 }
 
 void adapter_remove_connection(struct btd_adapter *adapter,
-						struct btd_device *device)
+				struct btd_device *device, uint8_t reason)
 {
 	DBG("");
 

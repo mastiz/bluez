@@ -37,6 +37,7 @@
 #include <bluetooth/hci_lib.h>
 #include <bluetooth/sdp.h>
 #include <bluetooth/sdp_lib.h>
+#include <bluetooth/mgmt.h>
 
 #include <glib.h>
 
@@ -2354,6 +2355,22 @@ static inline void le_conn_complete(int index, void *ptr)
 		free(str);
 }
 
+static inline uint8_t hci_to_mgmt_reason(uint8_t reason)
+{
+	switch(reason) {
+	case HCI_CONNECTION_TIMEOUT:
+		return MGMT_DEV_DISCONN_TIMEOUT;
+	case HCI_OE_USER_ENDED_CONNECTION:
+	case HCI_OE_LOW_RESOURCES:
+	case HCI_OE_POWER_OFF:
+		return MGMT_DEV_DISCONN_REMOTE;
+	case HCI_CONNECTION_TERMINATED:
+		return MGMT_DEV_DISCONN_LOCAL_HOST;
+	default:
+		return MGMT_DEV_DISCONN_UNKNOWN;
+	}
+}
+
 static inline void disconn_complete(int index, void *ptr)
 {
 	struct dev_info *dev = &devs[index];
@@ -2371,7 +2388,8 @@ static inline void disconn_complete(int index, void *ptr)
 
 	dev->connections = g_slist_remove(dev->connections, conn);
 
-	btd_event_disconn_complete(&dev->bdaddr, &conn->bdaddr);
+	btd_event_disconn_complete(&dev->bdaddr, &conn->bdaddr,
+					hci_to_mgmt_reason(evt->reason));
 
 	conn_free(conn);
 }

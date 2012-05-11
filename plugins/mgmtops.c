@@ -536,7 +536,7 @@ static void mgmt_device_disconnected(int sk, uint16_t index, void *buf,
 
 	info = &controllers[index];
 
-	btd_event_disconn_complete(&info->bdaddr, &ev->addr.bdaddr);
+	btd_event_disconn_complete(&info->bdaddr, &ev->addr.bdaddr, reason);
 }
 
 static void mgmt_connect_failed(int sk, uint16_t index, void *buf, size_t len)
@@ -1117,7 +1117,8 @@ static void disconnect_complete(int sk, uint16_t index, uint8_t status,
 
 	info = &controllers[index];
 
-	btd_event_disconn_complete(&info->bdaddr, &rp->addr.bdaddr);
+	btd_event_disconn_complete(&info->bdaddr, &rp->addr.bdaddr,
+						MGMT_DEV_DISCONN_LOCAL_HOST);
 
 	bonding_complete(info, &rp->addr.bdaddr, HCI_CONNECTION_TERMINATED);
 }
