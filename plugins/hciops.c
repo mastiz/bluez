@@ -1854,8 +1854,15 @@ static void write_class_complete(int index, uint8_t status)
 	dev->pending_cod = 0;
 
 	adapter = manager_find_adapter(&dev->bdaddr);
-	if (adapter)
-		btd_adapter_class_changed(adapter, dev->current_cod);
+	if (adapter) {
+		uint8_t new_class[3];
+
+		new_class[0] = (uint8_t) dev->current_cod;
+		new_class[1] = (uint8_t) (dev->current_cod >> 8);
+		new_class[2] = (uint8_t) (dev->current_cod >> 16);
+
+		btd_adapter_class_changed(adapter, new_class);
+	}
 
 	update_ext_inquiry_response(index);
 
