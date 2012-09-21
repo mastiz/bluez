@@ -159,10 +159,14 @@ static void cancel_connection(struct network_conn *nc, const char *err_msg)
 		nc->watch = 0;
 	}
 
-	if (nc->msg && err_msg) {
-		reply = btd_error_failed(nc->msg, err_msg);
-		g_dbus_send_message(connection, reply);
-	}
+       if (nc->msg) {
+               if (err_msg) {
+                       reply = btd_error_failed(nc->msg, err_msg);
+                       g_dbus_send_message(connection, reply);
+               }
+               dbus_message_unref(nc->msg);
+               nc->msg = NULL;
+       }
 
 	g_io_channel_shutdown(nc->io, TRUE, NULL);
 	g_io_channel_unref(nc->io);
@@ -269,6 +273,9 @@ static gboolean bnep_setup_cb(GIOChannel *chan, GIOCondition cond,
 	g_dbus_send_reply(connection, nc->msg,
 			DBUS_TYPE_STRING, &pdev,
 			DBUS_TYPE_INVALID);
+
+	dbus_message_unref(nc->msg);
+	nc->msg = NULL;
 
 	connected = TRUE;
 	emit_property_changed(connection, nc->peer->path,
