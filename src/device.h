@@ -89,8 +89,6 @@ int device_request_authentication(struct btd_device *device, auth_type_t type,
 					void *data, gboolean secure, void *cb);
 void device_cancel_authentication(struct btd_device *device, gboolean aborted);
 gboolean device_is_authenticating(struct btd_device *device);
-gboolean device_is_authorizing(struct btd_device *device);
-void device_set_authorizing(struct btd_device *device, gboolean auth);
 void device_add_connection(struct btd_device *device, DBusConnection *conn);
 void device_remove_connection(struct btd_device *device, DBusConnection *conn);
 void device_request_disconnect(struct btd_device *device, DBusMessage *msg);
