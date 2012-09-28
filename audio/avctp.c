@@ -138,6 +138,7 @@ struct avctp {
 
 	GIOChannel *io;
 	guint io_id;
+	guint auth_id;
 
 	uint16_t mtu;
 
@@ -336,13 +337,9 @@ static void avctp_disconnected(struct avctp *session)
 		g_source_remove(session->io_id);
 		session->io_id = 0;
 
-		if (session->state == AVCTP_STATE_CONNECTING) {
-			struct audio_device *dev;
-
-			dev = manager_get_device(&session->server->src,
-							&session->dst, FALSE);
-			audio_device_cancel_authorization(dev, auth_cb,
-								session);
+		if (session->auth_id != 0) {
+			btd_cancel_authorization(session->auth_id);
+			session->auth_id = 0;
 		}
 	}
 
@@ -385,15 +382,7 @@ static void avctp_set_state(struct avctp *session, avctp_state_t new_state)
 	switch (new_state) {
 	case AVCTP_STATE_DISCONNECTED:
 		DBG("AVCTP Disconnected");
-
 		avctp_disconnected(session);
-
-		if (old_state != AVCTP_STATE_CONNECTED)
-			break;
-
-		if (!audio_device_is_active(dev, NULL))
-			audio_device_set_authorized(dev, FALSE);
-
 		break;
 	case AVCTP_STATE_CONNECTING:
 		DBG("AVCTP Connecting");
@@ -656,6 +645,8 @@ static void auth_cb(DBusError *derr, void *user_data)
 	struct avctp *session = user_data;
 	GError *err = NULL;
 
+	session->auth_id = 0;
+
 	if (session->io_id) {
 		g_source_remove(session->io_id);
 		session->io_id = 0;
@@ -779,8 +770,10 @@ static void avctp_confirm_cb(GIOChannel *chan, gpointer data)
 	avctp_set_state(session, AVCTP_STATE_CONNECTING);
 	session->io = g_io_channel_ref(chan);
 
-	if (audio_device_request_authorization(dev, AVRCP_TARGET_UUID,
-						auth_cb, session) < 0)
+	session->auth_id = btd_request_authorization(&dev->src, &dev->dst,
+							AVRCP_TARGET_UUID,
+							auth_cb, session);
+	if (session->auth_id == 0)
 		goto drop;
 
 	session->io_id = g_io_add_watch(chan, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
