@@ -64,6 +64,7 @@ struct dun_client {
 
 	GIOChannel *io;	/* Client socket */
 	guint io_watch;	/* Client IO watch id */
+	guint auth_id;
 
 	guint tty_timer;
 	int tty_tries;
@@ -295,6 +296,8 @@ static void auth_cb(DBusError *derr, void *user_data)
 	struct dun_client *client = &server->client;
 	GError *err = NULL;
 
+	client->auth_id = 0;
+
 	if (derr && dbus_error_is_set(derr)) {
 		error("DUN access denied: %s", derr->message);
 		goto drop;
@@ -319,7 +322,8 @@ static gboolean auth_watch(GIOChannel *chan, GIOCondition cond, gpointer data)
 
 	error("DUN client disconnected while waiting for authorization");
 
-	btd_cancel_authorization(&server->bda, &client->bda);
+	btd_cancel_authorization(client->auth_id);
+	client->auth_id = 0;
 
 	disconnect(server);
 
@@ -347,8 +351,10 @@ static void confirm_cb(GIOChannel *io, gpointer user_data)
 		return;
 	}
 
-	if (btd_request_authorization(&server->bda, &client->bda, DUN_GW_UUID,
-						auth_cb, user_data) < 0) {
+	client->auth_id = btd_request_authorization(&server->bda, &client->bda,
+							DUN_GW_UUID,
+							auth_cb, user_data);
+	if (client->auth_id == 0) {
 		error("Requesting DUN authorization failed");
 		return;
 	}

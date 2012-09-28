@@ -67,6 +67,7 @@ struct pending_auth {
 	char *sender;
 	bdaddr_t dst;
 	char uuid[MAX_LEN_UUID_STR];
+	guint id;
 };
 
 struct service_adapter {
@@ -560,8 +561,9 @@ done:
 	else
 		bacpy(&src, BDADDR_ANY);
 
-	btd_request_authorization(&src, &auth->dst,
-					auth->uuid, auth_cb, serv_adapter);
+	auth->id = btd_request_authorization(&src, &auth->dst,
+							auth->uuid, auth_cb,
+							serv_adapter);
 }
 
 static DBusMessage *request_authorization(DBusConnection *conn,
@@ -637,8 +639,9 @@ static DBusMessage *request_authorization(DBusConnection *conn,
 	else
 		bacpy(&src, BDADDR_ANY);
 
-	if (btd_request_authorization(&src, &auth->dst, auth->uuid, auth_cb,
-							serv_adapter) < 0) {
+	auth->id = btd_request_authorization(&src, &auth->dst, auth->uuid,
+							auth_cb, serv_adapter);
+	if (auth->id == 0) {
 		serv_adapter->pending_list = g_slist_remove(serv_adapter->pending_list,
 									auth);
 		g_free(auth);
@@ -668,7 +671,7 @@ static DBusMessage *cancel_authorization(DBusConnection *conn,
 	else
 		bacpy(&src, BDADDR_ANY);
 
-	btd_cancel_authorization(&src, &auth->dst);
+	btd_cancel_authorization(auth->id);
 
 	reply = btd_error_not_authorized(auth->msg);
 	dbus_message_unref(auth->msg);
@@ -689,8 +692,9 @@ static DBusMessage *cancel_authorization(DBusConnection *conn,
 	else
 		bacpy(&src, BDADDR_ANY);
 
-	btd_request_authorization(&src, &auth->dst,
-					auth->uuid, auth_cb, serv_adapter);
+	auth->id = btd_request_authorization(&src, &auth->dst,
+							auth->uuid, auth_cb,
+							serv_adapter);
 
 done:
 	return dbus_message_new_method_return(msg);
