@@ -394,8 +394,12 @@ static DBusMessage *set_pairable(DBusConnection *conn, DBusMessage *msg,
 		goto store;
 
 	err = set_mode(adapter, MODE_DISCOVERABLE, NULL);
-	if (err < 0 && msg)
-		return btd_error_failed(msg, strerror(-err));
+	if (err < 0) {
+		if (msg != NULL)
+			return btd_error_failed(msg, strerror(-err));
+
+		return NULL;
+	}
 
 store:
 	adapter_ops->set_pairable(adapter->dev_id, pairable);
