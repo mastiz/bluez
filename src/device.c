@@ -504,8 +504,6 @@ static void driver_remove(struct btd_device_driver *driver,
 						struct btd_device *device)
 {
 	driver->remove(device);
-
-	device->drivers = g_slist_remove(device->drivers, driver);
 }
 
 static gboolean do_disconnect(gpointer user_data)
@@ -533,6 +531,8 @@ int device_block(DBusConnection *conn, struct btd_device *device,
 		do_disconnect(device);
 
 	g_slist_foreach(device->drivers, (GFunc) driver_remove, device);
+	g_slist_free(device->drivers);
+	device->drivers = NULL;
 
 	if (!update_only)
 		err = btd_adapter_block_address(device->adapter,
