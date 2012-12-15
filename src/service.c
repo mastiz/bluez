@@ -51,6 +51,7 @@ struct btd_service {
 	struct btd_device	*device;
 	struct btd_profile	*profile;
 	btd_service_state_t	state;
+	int			err;
 };
 
 static const char *state2str(btd_service_state_t state)
@@ -58,8 +59,14 @@ static const char *state2str(btd_service_state_t state)
 	switch (state) {
 	case BTD_SERVICE_STATE_UNAVAILABLE:
 		return "unavailable";
-	case BTD_SERVICE_STATE_PROBED:
-		return "probed";
+	case BTD_SERVICE_STATE_DISCONNECTED:
+		return "disconnected";
+	case BTD_SERVICE_STATE_CONNECTING:
+		return "connecting";
+	case BTD_SERVICE_STATE_CONNECTED:
+		return "connected";
+	case BTD_SERVICE_STATE_DISCONNECTING:
+		return "disconnecting";
 	}
 
 	return NULL;
@@ -122,13 +129,29 @@ struct btd_service *service_create(struct btd_device *device,
 void service_probed(struct btd_service *service)
 {
 	assert(service->state == BTD_SERVICE_STATE_UNAVAILABLE);
-	service_set_state(service, BTD_SERVICE_STATE_PROBED);
+	service_set_state(service, BTD_SERVICE_STATE_DISCONNECTED);
+}
+
+void service_connecting(struct btd_service *service)
+{
+	assert(service->state == BTD_SERVICE_STATE_DISCONNECTED);
+	service->err = 0;
+	service_set_state(service, BTD_SERVICE_STATE_CONNECTING);
+}
+
+void service_disconnecting(struct btd_service *service)
+{
+	assert(service->state == BTD_SERVICE_STATE_CONNECTING ||
+				service->state == BTD_SERVICE_STATE_CONNECTED);
+	service->err = 0;
+	service_set_state(service, BTD_SERVICE_STATE_DISCONNECTING);
 }
 
 void service_unavailable(struct btd_service *service)
 {
 	service->device = NULL;
 	service->profile = NULL;
+	service->err = 0;
 	service_set_state(service, BTD_SERVICE_STATE_UNAVAILABLE);
 }
 
@@ -142,7 +165,36 @@ struct btd_profile *btd_service_get_profile(const struct btd_service *service)
 	return service->profile;
 }
 
+int btd_service_get_error(const struct btd_service *service)
+{
+	return service->err;
+}
+
 btd_service_state_t btd_service_get_state(const struct btd_service *service)
 {
 	return service->state;
+}
+
+void btd_service_connecting_complete(struct btd_service *service, int err)
+{
+	if (service->state != BTD_SERVICE_STATE_DISCONNECTED &&
+				service->state != BTD_SERVICE_STATE_CONNECTING)
+		return;
+
+	service->err = err;
+
+	if (err == 0)
+		service_set_state(service, BTD_SERVICE_STATE_CONNECTED);
+	else
+		service_set_state(service, BTD_SERVICE_STATE_DISCONNECTED);
+}
+
+void btd_service_disconnecting_complete(struct btd_service *service, int err)
+{
+	if (service->state != BTD_SERVICE_STATE_CONNECTED &&
+			service->state != BTD_SERVICE_STATE_DISCONNECTING)
+		return;
+
+	service->err = err;
+	service_set_state(service, BTD_SERVICE_STATE_DISCONNECTED);
 }
