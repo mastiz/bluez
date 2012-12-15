@@ -21,6 +21,11 @@
  *
  */
 
+typedef enum {
+	BTD_SERVICE_STATE_UNAVAILABLE, /* Not probed */
+	BTD_SERVICE_STATE_PROBED,
+} btd_service_state_t;
+
 struct btd_service;
 
 struct btd_service *btd_service_ref(struct btd_service *service);
@@ -30,6 +35,10 @@ void btd_service_unref(struct btd_service *service);
 struct btd_service *service_create(struct btd_device *device,
 						struct btd_profile *profile);
 
+void service_probed(struct btd_service *service);
+void service_unavailable(struct btd_service *service);
+
 /* State access */
 struct btd_device *btd_service_get_device(const struct btd_service *service);
 struct btd_profile *btd_service_get_profile(const struct btd_service *service);
+btd_service_state_t btd_service_get_state(const struct btd_service *service);

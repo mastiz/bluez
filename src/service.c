@@ -50,7 +50,34 @@ struct btd_service {
 	gint			ref;
 	struct btd_device	*device;
 	struct btd_profile	*profile;
+	btd_service_state_t	state;
 };
+
+static const char *state2str(btd_service_state_t state)
+{
+	switch (state) {
+	case BTD_SERVICE_STATE_UNAVAILABLE:
+		return "unavailable";
+	case BTD_SERVICE_STATE_PROBED:
+		return "probed";
+	}
+
+	return NULL;
+}
+
+static void service_set_state(struct btd_service *service,
+						btd_service_state_t state)
+{
+	btd_service_state_t old = service->state;
+
+	if (state == old)
+		return;
+
+	service->state = state;
+
+	DBG("State changed %p: %s -> %s", service, state2str(old),
+							state2str(state));
+}
 
 struct btd_service *btd_service_ref(struct btd_service *service)
 {
@@ -87,8 +114,22 @@ struct btd_service *service_create(struct btd_device *device,
 	service->ref = 1;
 	service->device = device; /* Weak ref */
 	service->profile = profile;
+	service->state = BTD_SERVICE_STATE_UNAVAILABLE;
 
 	return service;
+}
+
+void service_probed(struct btd_service *service)
+{
+	assert(service->state == BTD_SERVICE_STATE_UNAVAILABLE);
+	service_set_state(service, BTD_SERVICE_STATE_PROBED);
+}
+
+void service_unavailable(struct btd_service *service)
+{
+	service->device = NULL;
+	service->profile = NULL;
+	service_set_state(service, BTD_SERVICE_STATE_UNAVAILABLE);
 }
 
 struct btd_device *btd_service_get_device(const struct btd_service *service)
@@ -99,4 +140,9 @@ struct btd_device *btd_service_get_device(const struct btd_service *service)
 struct btd_profile *btd_service_get_profile(const struct btd_service *service)
 {
 	return service->profile;
+}
+
+btd_service_state_t btd_service_get_state(const struct btd_service *service)
+{
+	return service->state;
 }
