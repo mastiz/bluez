@@ -906,7 +906,7 @@ static void service_remove(gpointer data)
 	struct btd_device *device = btd_service_get_device(service);
 
 	service_unavailable(service);
-	profile->device_remove(profile, device);
+	profile->device_remove(service);
 	device->pending = g_slist_remove(device->pending, service);
 	btd_service_unref(service);
 }
@@ -2393,7 +2393,6 @@ struct probe_data {
 static void dev_probe(struct btd_profile *p, void *user_data)
 {
 	struct probe_data *d = user_data;
-	GSList *probe_uuids;
 	struct btd_service *service;
 	int err;
 
@@ -2403,21 +2402,17 @@ static void dev_probe(struct btd_profile *p, void *user_data)
 	if (!device_match_profile(d->dev, p, d->uuids))
 		return;
 
-	probe_uuids = g_slist_append(NULL, (char *) p->remote_uuid);
-
 	service = service_create(d->dev, p);
 
-	err = p->device_probe(p, d->dev, probe_uuids);
+	err = p->device_probe(service);
 	if (err < 0) {
 		error("%s profile probe failed for %s", p->name, d->addr);
 		btd_service_unref(service);
-		g_slist_free(probe_uuids);
 		return;
 	}
 
 	service_probed(service);
 	d->dev->services = g_slist_append(d->dev->services, service);
-	g_slist_free(probe_uuids);
 }
 
 void device_probe_profile(gpointer a, gpointer b)
@@ -2441,7 +2436,7 @@ void device_probe_profile(gpointer a, gpointer b)
 
 	service = service_create(device, profile);
 
-	err = profile->device_probe(profile, device, probe_uuids);
+	err = profile->device_probe(service);
 	if (err < 0) {
 		error("%s profile probe failed for %s", profile->name, addr);
 		btd_service_unref(service);

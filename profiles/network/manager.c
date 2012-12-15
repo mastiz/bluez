@@ -41,6 +41,7 @@
 #include "adapter.h"
 #include "device.h"
 #include "profile.h"
+#include "service.h"
 #include "manager.h"
 #include "common.h"
 #include "connection.h"
@@ -74,16 +75,19 @@ done:
 				conf_security ? "true" : "false");
 }
 
-static int panu_probe(struct btd_profile *p, struct btd_device *device,
-								GSList *uuids)
+static int panu_probe(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
+
 	DBG("path %s", device_get_path(device));
 
 	return connection_register(device, BNEP_SVC_PANU);
 }
 
-static void network_remove(struct btd_profile *p, struct btd_device *device)
+static void network_remove(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
+
 	DBG("path %s", device_get_path(device));
 
 	connection_unregister(device);
@@ -118,9 +122,10 @@ static void panu_server_remove(struct btd_profile *p,
 	server_unregister(adapter, BNEP_SVC_PANU);
 }
 
-static int gn_probe(struct btd_profile *p, struct btd_device *device,
-								GSList *uuids)
+static int gn_probe(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
+
 	DBG("path %s", device_get_path(device));
 
 	return connection_register(device, BNEP_SVC_GN);
@@ -155,9 +160,10 @@ static void gn_server_remove(struct btd_profile *p,
 	server_unregister(adapter, BNEP_SVC_GN);
 }
 
-static int nap_probe(struct btd_profile *p, struct btd_device *device,
-								GSList *uuids)
+static int nap_probe(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
+
 	DBG("path %s", device_get_path(device));
 
 	return connection_register(device, BNEP_SVC_NAP);

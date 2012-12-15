@@ -39,6 +39,7 @@
 #include "../src/adapter.h"
 #include "../src/device.h"
 #include "../src/profile.h"
+#include "../src/service.h"
 
 #include "device.h"
 #include "server.h"
@@ -55,11 +56,11 @@ static void input_remove(struct btd_device *device, const char *uuid)
 	input_device_unregister(path, uuid);
 }
 
-static int hid_device_probe(struct btd_profile *p, struct btd_device *device,
-								GSList *uuids)
+static int hid_device_probe(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
 	const char *path = device_get_path(device);
-	const sdp_record_t *rec = btd_device_get_record(device, uuids->data);
+	const sdp_record_t *rec = btd_device_get_record(device, HID_UUID);
 
 	DBG("path %s", path);
 
@@ -70,8 +71,10 @@ static int hid_device_probe(struct btd_profile *p, struct btd_device *device,
 							idle_timeout * 60);
 }
 
-static void hid_device_remove(struct btd_profile *p, struct btd_device *device)
+static void hid_device_remove(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
+
 	input_remove(device, HID_UUID);
 }
 
