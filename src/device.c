@@ -1199,7 +1199,7 @@ static int device_resolve_svc(struct btd_device *dev, DBusMessage *msg)
 		return device_browse_primary(dev, msg, FALSE);
 }
 
-static struct btd_profile *find_connectable_profile(struct btd_device *dev,
+static struct btd_service *find_connectable_service(struct btd_device *dev,
 							const char *uuid)
 {
 	GSList *l;
@@ -1212,7 +1212,7 @@ static struct btd_profile *find_connectable_profile(struct btd_device *dev,
 			continue;
 
 		if (strcasecmp(uuid, p->remote_uuid) == 0)
-			return p;
+			return service;
 	}
 
 	return NULL;
@@ -1249,10 +1249,11 @@ static DBusMessage *connect_profiles(struct btd_device *dev, DBusMessage *msg,
 	}
 
 	if (uuid) {
-		p = find_connectable_profile(dev, uuid);
-		if (!p)
+		service = find_connectable_service(dev, uuid);
+		if (!service)
 			return btd_error_invalid_args(msg);
 
+		p = btd_service_get_profile(service);
 		dev->pending = g_slist_prepend(dev->pending, p);
 
 		goto start_connect;
@@ -1368,7 +1369,6 @@ static DBusMessage *disconnect_profile(DBusConnection *conn, DBusMessage *msg,
 	const char *pattern;
 	char *uuid;
 	int err;
-	GSList *l;
 
 	if (!dbus_message_get_args(msg, NULL, DBUS_TYPE_STRING, &pattern,
 							DBUS_TYPE_INVALID))
@@ -1378,14 +1378,13 @@ static DBusMessage *disconnect_profile(DBusConnection *conn, DBusMessage *msg,
 	if (uuid == NULL)
 		return btd_error_invalid_args(msg);
 
-	p = find_connectable_profile(dev, uuid);
+	service = find_connectable_service(dev, uuid);
 	g_free(uuid);
 
-	if (!p)
+	if (!service)
 		return btd_error_invalid_args(msg);
 
-	l = g_slist_find_custom(dev->services, p, service_profile_cmp);
-	service = l->data;
+	p = btd_service_get_profile(service);
 
 	if (!p->disconnect)
 		return btd_error_not_supported(msg);
