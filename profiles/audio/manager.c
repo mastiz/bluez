@@ -229,7 +229,7 @@ static int a2dp_sink_disconnect(struct btd_device *dev,
 	return sink_disconnect(audio_dev, FALSE);
 }
 
-static int avrcp_control_connect(struct btd_device *dev,
+static int avrcp_target_connect(struct btd_device *dev,
 						struct btd_profile *profile)
 {
 	const char *path = device_get_path(dev);
@@ -246,7 +246,7 @@ static int avrcp_control_connect(struct btd_device *dev,
 	return control_connect(audio_dev);
 }
 
-static int avrcp_control_disconnect(struct btd_device *dev,
+static int avrcp_target_disconnect(struct btd_device *dev,
 						struct btd_profile *profile)
 {
 	const char *path = device_get_path(dev);
@@ -295,20 +295,36 @@ static void a2dp_sink_server_remove(struct btd_profile *p,
 	a2dp_sink_unregister(adapter);
 }
 
-static int avrcp_server_probe(struct btd_profile *p,
+static int avrcp_target_server_probe(struct btd_profile *p,
 						struct btd_adapter *adapter)
 {
 	DBG("path %s", adapter_get_path(adapter));
 
-	return avrcp_register(adapter, config);
+	return avrcp_target_register(adapter, config);
 }
 
-static void avrcp_server_remove(struct btd_profile *p,
+static int avrcp_remote_server_probe(struct btd_profile *p,
 						struct btd_adapter *adapter)
 {
 	DBG("path %s", adapter_get_path(adapter));
 
-	return avrcp_unregister(adapter);
+	return avrcp_remote_register(adapter, config);
+}
+
+static void avrcp_target_server_remove(struct btd_profile *p,
+						struct btd_adapter *adapter)
+{
+	DBG("path %s", adapter_get_path(adapter));
+
+	avrcp_target_unregister(adapter);
+}
+
+static void avrcp_remote_server_remove(struct btd_profile *p,
+						struct btd_adapter *adapter)
+{
+	DBG("path %s", adapter_get_path(adapter));
+
+	avrcp_remote_unregister(adapter);
 }
 
 static int media_server_probe(struct btd_adapter *adapter)
@@ -357,19 +373,30 @@ static struct btd_profile a2dp_sink_profile = {
 	.adapter_remove	= a2dp_sink_server_remove,
 };
 
-static struct btd_profile avrcp_profile = {
-	.name		= "audio-avrcp",
+static struct btd_profile avrcp_target_profile = {
+	.name		= "audio-avrcp-target",
 
-	.remote_uuids	= BTD_UUIDS(AVRCP_TARGET_UUID, AVRCP_REMOTE_UUID),
+	.remote_uuids	= BTD_UUIDS(AVRCP_TARGET_UUID),
 	.device_probe	= avrcp_probe,
 	.device_remove	= audio_remove,
 
 	.auto_connect	= true,
-	.connect	= avrcp_control_connect,
-	.disconnect	= avrcp_control_disconnect,
+	.connect	= avrcp_target_connect,
+	.disconnect	= avrcp_target_disconnect,
 
-	.adapter_probe	= avrcp_server_probe,
-	.adapter_remove = avrcp_server_remove,
+	.adapter_probe	= avrcp_target_server_probe,
+	.adapter_remove = avrcp_target_server_remove,
+};
+
+static struct btd_profile avrcp_remote_profile = {
+	.name		= "audio-avrcp-control",
+
+	.remote_uuids	= BTD_UUIDS(AVRCP_REMOTE_UUID),
+	.device_probe	= avrcp_probe,
+	.device_remove	= audio_remove,
+
+	.adapter_probe	= avrcp_remote_server_probe,
+	.adapter_remove = avrcp_remote_server_remove,
 };
 
 static struct btd_adapter_driver media_driver = {
@@ -400,12 +427,14 @@ void audio_source_disconnected(struct btd_device *dev, int err)
 
 void audio_control_connected(struct btd_device *dev, int err)
 {
-	device_profile_connected(dev, &avrcp_profile, err);
+	device_profile_connected(dev, &avrcp_target_profile, err);
+	device_profile_connected(dev, &avrcp_remote_profile, err);
 }
 
 void audio_control_disconnected(struct btd_device *dev, int err)
 {
-	device_profile_disconnected(dev, &avrcp_profile, err);
+	device_profile_disconnected(dev, &avrcp_target_profile, err);
+	device_profile_disconnected(dev, &avrcp_remote_profile, err);
 }
 
 int audio_manager_init(GKeyFile *conf)
@@ -449,8 +478,10 @@ proceed:
 	if (enabled.sink)
 		btd_profile_register(&a2dp_sink_profile);
 
-	if (enabled.control)
-		btd_profile_register(&avrcp_profile);
+	if (enabled.control) {
+		btd_profile_register(&avrcp_remote_profile);
+		btd_profile_register(&avrcp_target_profile);
+	}
 
 	btd_register_adapter_driver(&media_driver);
 
@@ -470,8 +501,10 @@ void audio_manager_exit(void)
 	if (enabled.sink)
 		btd_profile_unregister(&a2dp_sink_profile);
 
-	if (enabled.control)
-		btd_profile_unregister(&avrcp_profile);
+	if (enabled.control) {
+		btd_profile_unregister(&avrcp_remote_profile);
+		btd_profile_unregister(&avrcp_target_profile);
+	}
 
 	btd_unregister_adapter_driver(&media_driver);
 }
