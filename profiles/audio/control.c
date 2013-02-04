@@ -68,6 +68,26 @@ struct control {
 	unsigned int avctp_id;
 };
 
+void control_target_connected(struct control *control, int err)
+{
+	btd_service_connecting_complete(control->target, err);
+}
+
+void control_target_disconnected(struct control *control, int err)
+{
+	btd_service_disconnecting_complete(control->target, err);
+}
+
+void control_remote_connected(struct control *control, int err)
+{
+	btd_service_connecting_complete(control->remote, err);
+}
+
+void control_remote_disconnected(struct control *control, int err)
+{
+	btd_service_disconnecting_complete(control->remote, err);
+}
+
 static void state_changed(struct audio_device *dev, avctp_state_t old_state,
 							avctp_state_t new_state)
 {
