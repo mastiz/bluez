@@ -45,39 +45,6 @@
 #include "server.h"
 #include "manager.h"
 
-static int idle_timeout = 0;
-
-static void input_remove(struct btd_device *device, const char *uuid)
-{
-	const char *path = device_get_path(device);
-
-	DBG("path %s", path);
-
-	input_device_unregister(path, uuid);
-}
-
-static int hid_device_probe(struct btd_service *service)
-{
-	struct btd_device *device = btd_service_get_device(service);
-	const char *path = device_get_path(device);
-	const sdp_record_t *rec = btd_device_get_record(device, HID_UUID);
-
-	DBG("path %s", path);
-
-	if (!rec)
-		return -1;
-
-	return input_device_register(device, path, HID_UUID, rec,
-							idle_timeout * 60);
-}
-
-static void hid_device_remove(struct btd_service *service)
-{
-	struct btd_device *device = btd_service_get_device(service);
-
-	input_remove(device, HID_UUID);
-}
-
 static int hid_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
 {
 	return server_start(adapter_get_address(adapter));
@@ -98,8 +65,8 @@ static struct btd_profile input_profile = {
 	.connect	= input_device_connect,
 	.disconnect	= input_device_disconnect,
 
-	.device_probe	= hid_device_probe,
-	.device_remove	= hid_device_remove,
+	.device_probe	= input_device_register,
+	.device_remove	= input_device_unregister,
 
 	.adapter_probe	= hid_server_probe,
 	.adapter_remove = hid_server_remove,
@@ -140,12 +107,16 @@ static int input_init(void)
 
 	config = load_config_file(CONFIGDIR "/input.conf");
 	if (config) {
+		int idle_timeout;
+
 		idle_timeout = g_key_file_get_integer(config, "General",
 						"IdleTimeout", &err);
 		if (err) {
 			DBG("input.conf: %s", err->message);
 			g_error_free(err);
 		}
+
+		input_set_idle_timeout(idle_timeout * 60);
 	}
 
 	btd_profile_register(&input_profile);

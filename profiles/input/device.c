@@ -44,6 +44,7 @@
 #include "../src/adapter.h"
 #include "../src/device.h"
 #include "../src/profile.h"
+#include "../src/service.h"
 #include "../src/storage.h"
 #include "../src/dbus-common.h"
 
@@ -55,9 +56,9 @@
 #include "sdp-client.h"
 
 struct input_device {
+	struct btd_service	*service;
 	struct btd_device	*device;
 	char			*path;
-	char			*uuid;
 	bdaddr_t		src;
 	bdaddr_t		dst;
 	uint32_t		handle;
@@ -66,7 +67,6 @@ struct input_device {
 	guint			ctrl_watch;
 	guint			intr_watch;
 	guint			sec_watch;
-	int			timeout;
 	struct hidp_connadd_req *req;
 	guint			dc_id;
 	gboolean		disable_sdp;
@@ -74,6 +74,12 @@ struct input_device {
 };
 
 static GSList *devices = NULL;
+static int idle_timeout = 0;
+
+void input_set_idle_timeout(int timeout)
+{
+	idle_timeout = timeout;
+}
 
 static struct input_device *find_device_by_path(GSList *list, const char *path)
 {
@@ -92,6 +98,7 @@ static void input_device_free(struct input_device *idev)
 	if (idev->dc_id)
 		device_remove_disconnect_watch(idev->device, idev->dc_id);
 
+	btd_service_unref(idev->service);
 	btd_device_unref(idev->device);
 	g_free(idev->name);
 	g_free(idev->path);
@@ -110,8 +117,6 @@ static void input_device_free(struct input_device *idev)
 
 	if (idev->ctrl_io)
 		g_io_channel_unref(idev->ctrl_io);
-
-	g_free(idev->uuid);
 
 	g_free(idev);
 }
@@ -366,7 +371,7 @@ static int hidp_add_connection(struct input_device *idev)
 	req->ctrl_sock = g_io_channel_unix_get_fd(idev->ctrl_io);
 	req->intr_sock = g_io_channel_unix_get_fd(idev->intr_io);
 	req->flags     = 0;
-	req->idle_to   = idev->timeout;
+	req->idle_to   = idle_timeout;
 
 	ba2str(&idev->src, src_addr);
 	ba2str(&idev->dst, dst_addr);
@@ -674,29 +679,6 @@ int input_device_disconnect(struct btd_device *dev, struct btd_profile *profile)
 	return 0;
 }
 
-static struct input_device *input_device_new(struct btd_device *device,
-				const char *path, const uint32_t handle,
-				gboolean disable_sdp)
-{
-	struct btd_adapter *adapter = device_get_adapter(device);
-	struct input_device *idev;
-	char name[HCI_MAX_NAME_LENGTH + 1];
-
-	idev = g_new0(struct input_device, 1);
-	bacpy(&idev->src, adapter_get_address(adapter));
-	bacpy(&idev->dst, device_get_address(device));
-	idev->device = btd_device_ref(device);
-	idev->path = g_strdup(path);
-	idev->handle = handle;
-	idev->disable_sdp = disable_sdp;
-
-	device_get_name(device, name, HCI_MAX_NAME_LENGTH);
-	if (strlen(name) > 0)
-		idev->name = g_strdup(name);
-
-	return idev;
-}
-
 static gboolean is_device_sdp_disable(const sdp_record_t *rec)
 {
 	sdp_data_t *data;
@@ -706,10 +688,36 @@ static gboolean is_device_sdp_disable(const sdp_record_t *rec)
 	return data && data->val.uint8;
 }
 
-int input_device_register(struct btd_device *device,
-					const char *path, const char *uuid,
-					const sdp_record_t *rec, int timeout)
+static struct input_device *input_device_new(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
+	const char *path = device_get_path(device);
+	struct btd_profile *p = btd_service_get_profile(service);
+	const sdp_record_t *rec = btd_device_get_record(device, p->remote_uuid);
+	struct btd_adapter *adapter = device_get_adapter(device);
+	struct input_device *idev;
+	char name[HCI_MAX_NAME_LENGTH + 1];
+
+	idev = g_new0(struct input_device, 1);
+	bacpy(&idev->src, adapter_get_address(adapter));
+	bacpy(&idev->dst, device_get_address(device));
+	idev->service = btd_service_ref(service);
+	idev->device = btd_device_ref(device);
+	idev->path = g_strdup(path);
+	idev->handle = rec->handle;
+	idev->disable_sdp = is_device_sdp_disable(rec);
+
+	device_get_name(device, name, HCI_MAX_NAME_LENGTH);
+	if (strlen(name) > 0)
+		idev->name = g_strdup(name);
+
+	return idev;
+}
+
+int input_device_register(struct btd_service *service)
+{
+	struct btd_device *device = btd_service_get_device(service);
+	const char *path = device_get_path(device);
 	struct input_device *idev;
 
 	DBG("%s", path);
@@ -718,13 +726,11 @@ int input_device_register(struct btd_device *device,
 	if (idev)
 		return -EEXIST;
 
-	idev = input_device_new(device, path, rec->handle,
-			is_device_sdp_disable(rec));
+	idev = input_device_new(service);
 	if (!idev)
 		return -EINVAL;
 
-	idev->timeout = timeout;
-	idev->uuid = g_strdup(uuid);
+	btd_service_set_user_data(service, idev);
 
 	devices = g_slist_append(devices, idev);
 
@@ -746,25 +752,21 @@ static struct input_device *find_device(const bdaddr_t *src,
 	return NULL;
 }
 
-int input_device_unregister(const char *path, const char *uuid)
+void input_device_unregister(struct btd_service *service)
 {
-	struct input_device *idev;
+	struct btd_device *device = btd_service_get_device(service);
+	const char *path = device_get_path(device);
+	struct input_device *idev = btd_service_get_user_data(service);
 
 	DBG("%s", path);
 
-	idev = find_device_by_path(devices, path);
-	if (idev == NULL)
-		return -EINVAL;
-
 	if (idev->ctrl_io) {
-		/* Pending connection running */
-		return -EBUSY;
+		/* FIXME: pending connection running */
+		return;
 	}
 
 	devices = g_slist_remove(devices, idev);
 	input_device_free(idev);
-
-	return 0;
 }
 
 static int input_device_connadd(struct input_device *idev)
