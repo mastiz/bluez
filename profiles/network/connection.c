@@ -43,6 +43,8 @@
 #include "dbus-common.h"
 #include "adapter.h"
 #include "device.h"
+#include "profile.h"
+#include "service.h"
 
 #include "error.h"
 #include "common.h"
@@ -65,6 +67,7 @@ struct network_peer {
 };
 
 struct network_conn {
+	struct btd_service *service;
 	char		dev[16];	/* Interface name */
 	uint16_t	id;		/* Role: Service Class Identifier */
 	conn_state	state;
@@ -82,6 +85,13 @@ struct __service_16 {
 } __attribute__ ((packed));
 
 static GSList *peers = NULL;
+
+static uint16_t get_service_id(struct btd_service *service)
+{
+	struct btd_profile *p = btd_service_get_profile(service);
+
+	return bnep_service_id(p->remote_uuid);
+}
 
 static struct network_peer *find_peer(GSList *list, struct btd_device *device)
 {
@@ -599,6 +609,7 @@ static void connection_free(void *data)
 	if (nc->connect)
 		dbus_message_unref(nc->connect);
 
+	btd_service_unref(nc->service);
 	g_free(nc);
 }
 
@@ -639,13 +650,14 @@ static const GDBusPropertyTable connection_properties[] = {
 	{ }
 };
 
-void connection_unregister(struct btd_device *device)
+void connection_unregister(struct btd_service *service)
 {
-	struct network_peer *peer;
+	struct btd_device *device = btd_service_get_device(service);
+	struct network_conn *conn = btd_service_get_user_data(service);
+	struct network_peer *peer = conn->peer;
+	uint16_t id = get_service_id(service);
 
-	peer = find_peer(peers, device);
-	if (!peer)
-		return;
+	DBG("%s id %u", device_get_path(device), id);
 
 	g_slist_free_full(peer->connections, connection_free);
 	peer->connections = NULL;
@@ -682,12 +694,14 @@ static struct network_peer *create_peer(struct btd_device *device)
 	return peer;
 }
 
-int connection_register(struct btd_device *device, uint16_t id)
+int connection_register(struct btd_service *service)
 {
+	struct btd_device *device = btd_service_get_device(service);
 	struct network_peer *peer;
 	struct network_conn *nc;
+	uint16_t id = get_service_id(service);
 
-	DBG("id %u", id);
+	DBG("%s id %u", device_get_path(device), id);
 
 	peer = find_peer(peers, device);
 	if (!peer) {
@@ -698,15 +712,21 @@ int connection_register(struct btd_device *device, uint16_t id)
 	}
 
 	nc = find_connection(peer->connections, id);
-	if (nc)
-		return 0;
+	if (nc) {
+		error("Device %s has multiple connection instances of %d",
+						device_get_path(device), id);
+		return -1;
+	}
 
 	nc = g_new0(struct network_conn, 1);
 	nc->id = id;
 	memset(nc->dev, 0, sizeof(nc->dev));
 	strcpy(nc->dev, "bnep%d");
+	nc->service = btd_service_ref(service);
 	nc->state = DISCONNECTED;
 	nc->peer = peer;
+
+	btd_service_set_user_data(service, nc);
 
 	DBG("id %u registered", id);
 
