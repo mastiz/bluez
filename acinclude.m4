@@ -21,6 +21,7 @@ AC_DEFUN([COMPILER_FLAGS], [
 		with_cflags="$with_cflags -Wredundant-decls"
 		with_cflags="$with_cflags -Wcast-align"
 		with_cflags="$with_cflags -DG_DISABLE_DEPRECATED"
+		with_cflags="$with_cflags -Wno-deprecated-declarations"
 	fi
 
 	AC_SUBST([WARNING_CFLAGS], $with_cflags)
