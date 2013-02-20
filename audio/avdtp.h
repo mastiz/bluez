@@ -239,6 +239,8 @@ struct avdtp_stream *avdtp_get_stream(struct avdtp_remote_sep *sep);
 int avdtp_discover(struct avdtp *session, avdtp_discover_cb_t cb,
 			void *user_data);
 
+int avdtp_cancel_discovery(struct avdtp *session);
+
 gboolean avdtp_has_stream(struct avdtp *session, struct avdtp_stream *stream);
 
 unsigned int avdtp_stream_add_cb(struct avdtp *session,

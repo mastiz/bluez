@@ -3408,6 +3408,29 @@ int avdtp_discover(struct avdtp *session, avdtp_discover_cb_t cb,
 	return err;
 }
 
+int avdtp_cancel_discovery(struct avdtp *session)
+{
+	DBG("state %d, io %p", session->state, session->io);
+
+	if (session->state != AVDTP_SESSION_STATE_CONNECTING)
+		return -EINVAL;
+
+	if (session->io != NULL) {
+		int sock = g_io_channel_unix_get_fd(session->io);
+
+		shutdown(sock, SHUT_RDWR);
+		g_io_channel_shutdown(session->io, FALSE, NULL);
+		g_io_channel_unref(session->io);
+		session->io = NULL;
+	}
+
+	finalize_discovery(session, ECANCELED);
+
+	avdtp_set_state(session, AVDTP_SESSION_STATE_DISCONNECTED);
+
+	return 0;
+}
+
 gboolean avdtp_stream_remove_cb(struct avdtp *session,
 				struct avdtp_stream *stream,
 				unsigned int id)
