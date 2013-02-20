@@ -333,6 +333,7 @@ static void discovery_complete(struct avdtp *session, GSList *seps, struct avdtp
 		avdtp_unref(source->session);
 		source->session = NULL;
 		if (avdtp_error_category(err) == AVDTP_ERRNO
+				&& avdtp_error_posix_errno(err) != ECANCELED
 				&& avdtp_error_posix_errno(err) != EHOSTDOWN) {
 			DBG("connect:connect XCASE detected");
 			source->retry_id =
@@ -427,8 +428,14 @@ static DBusMessage *source_disconnect(DBusConnection *conn,
 	if (!source->session)
 		return btd_error_not_connected(msg);
 
-	if (source->connect || source->disconnect)
+	if (source->disconnect)
 		return btd_error_busy(msg);
+
+	if (source->connect && avdtp_cancel_discovery(source->session) == 0) {
+		avdtp_unref(source->session);
+		source->session = NULL;
+		return dbus_message_new_method_return(msg);
+	}
 
 	if (source->stream_state < AVDTP_STATE_OPEN) {
 		DBusMessage *reply = dbus_message_new_method_return(msg);
