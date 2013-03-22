@@ -676,8 +676,11 @@ static DBusMessage *ag_disconnect(DBusConnection *conn, DBusMessage *msg,
 	if (!device->conn)
 		return NULL;
 
-	if (!gw->rfcomm)
+	if (gw->state == GATEWAY_STATE_DISCONNECTED)
 		return btd_error_not_connected(msg);
+
+	if (gw->msg)
+		pending_connect_finalize(device, strerror(ECANCELED));
 
 	reply = dbus_message_new_method_return(msg);
 	if (!reply)
