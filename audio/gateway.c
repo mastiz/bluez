@@ -429,17 +429,6 @@ fail:
 	gateway_close(dev);
 }
 
-static void unregister_incoming(gpointer user_data)
-{
-	struct audio_device *dev = user_data;
-	struct gateway *gw = dev->gateway;
-
-	if (gw->tmp_rfcomm) {
-		g_io_channel_unref(gw->tmp_rfcomm);
-		gw->tmp_rfcomm = NULL;
-	}
-}
-
 static void rfcomm_incoming_cb(GIOChannel *chan, GError *err,
 				gpointer user_data)
 {
@@ -451,11 +440,9 @@ static void rfcomm_incoming_cb(GIOChannel *chan, GError *err,
 
 	sdp_uuid16_create(&uuid, HANDSFREE_AGW_SVCLASS_ID);
 	if (bt_search_service(&dev->src, &dev->dst, &uuid,
-						get_incoming_record_cb, dev,
-						unregister_incoming) == 0)
+					get_incoming_record_cb, dev, NULL) == 0)
 		return;
 
-	unregister_incoming(dev);
 	gateway_close(dev);
 }
 
@@ -611,6 +598,15 @@ int gateway_close(struct audio_device *device)
 		g_io_channel_shutdown(gw->rfcomm, TRUE, NULL);
 		g_io_channel_unref(gw->rfcomm);
 		gw->rfcomm = NULL;
+	}
+
+	if (gw->tmp_rfcomm) {
+		sock = g_io_channel_unix_get_fd(gw->tmp_rfcomm);
+		shutdown(sock, SHUT_RDWR);
+
+		g_io_channel_shutdown(gw->tmp_rfcomm, TRUE, NULL);
+		g_io_channel_unref(gw->tmp_rfcomm);
+		gw->tmp_rfcomm = NULL;
 	}
 
 	if (gw->sco) {
