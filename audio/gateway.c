@@ -331,12 +331,29 @@ done:
 	dbus_message_unref(reply);
 }
 
+static void pending_connect_finalize(struct audio_device *dev, const char *err)
+{
+	struct gateway *gw = dev->gateway;
+	DBusMessage *reply;
+
+	assert(gw->msg);
+
+	if (err)
+		reply = btd_error_failed(gw->msg, err);
+	else
+		reply = dbus_message_new_method_return(gw->msg);
+
+	g_dbus_send_message(dev->conn, reply);
+
+	dbus_message_unref(gw->msg);
+	gw->msg = NULL;
+}
+
 static void rfcomm_connect_cb(GIOChannel *chan, GError *err,
 				gpointer user_data)
 {
 	struct audio_device *dev = user_data;
 	struct gateway *gw = dev->gateway;
-	DBusMessage *reply;
 	int sk, ret;
 
 	if (err) {
@@ -362,20 +379,15 @@ static void rfcomm_connect_cb(GIOChannel *chan, GError *err,
 		return;
 
 	if (ret)
-		reply = dbus_message_new_method_return(gw->msg);
+		pending_connect_finalize(dev, NULL);
 	else
-		reply = btd_error_failed(gw->msg, "Can't pass file descriptor");
-
-	g_dbus_send_message(dev->conn, reply);
+		pending_connect_finalize(dev, "Can't pass file descriptor");
 
 	return;
 
 fail:
-	if (gw->msg) {
-		DBusMessage *reply;
-		reply = btd_error_failed(gw->msg, "Connect failed");
-		g_dbus_send_message(dev->conn, reply);
-	}
+	if (gw->msg)
+		pending_connect_finalize(dev, "Connect failed");
 
 	gateway_close(dev);
 }
@@ -539,11 +551,9 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 	return;
 
 fail:
-	if (gw->msg) {
-		DBusMessage *reply = btd_error_failed(gw->msg,
+	if (gw->msg)
+		pending_connect_finalize(dev,
 					gerr ? gerr->message : strerror(-err));
-		g_dbus_send_message(dev->conn, reply);
-	}
 
 	gateway_close(dev);
 
