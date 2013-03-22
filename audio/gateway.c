@@ -33,6 +33,7 @@
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <assert.h>
 
 #include <glib.h>
 #include <dbus/dbus.h>
@@ -349,8 +350,10 @@ static void rfcomm_connect_cb(GIOChannel *chan, GError *err,
 
 	sk = g_io_channel_unix_get_fd(chan);
 
-	if (gw->rfcomm == NULL)
-		gw->rfcomm = g_io_channel_ref(chan);
+	assert(gw->tmp_rfcomm == chan);
+
+	gw->rfcomm = gw->tmp_rfcomm;
+	gw->tmp_rfcomm = NULL;
 
 	ret = agent_sendfd(gw->agent, sk, newconnection_reply, dev);
 
@@ -436,6 +439,11 @@ static void rfcomm_incoming_cb(GIOChannel *chan, GError *err,
 	struct gateway *gw = dev->gateway;
 	uuid_t uuid;
 
+	if (gw->tmp_rfcomm) {
+		DBG("RFCOMM connect XCASE detected");
+		return;
+	}
+
 	gw->tmp_rfcomm = g_io_channel_ref(chan);
 
 	sdp_uuid16_create(&uuid, HANDSFREE_AGW_SVCLASS_ID);
@@ -507,6 +515,12 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 		goto fail;
 	}
 
+	if (gw->tmp_rfcomm) {
+		DBG("RFCOMM connect XCASE detected");
+		err = -EALREADY;
+		goto fail;
+	}
+
 	io = bt_io_connect(BT_IO_RFCOMM, rfcomm_connect_cb, dev, NULL, &gerr,
 				BT_IO_OPT_SOURCE_BDADDR, &dev->src,
 				BT_IO_OPT_DEST_BDADDR, &dev->dst,
@@ -518,7 +532,7 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 		goto fail;
 	}
 
-	g_io_channel_unref(io);
+	gw->tmp_rfcomm = io;
 	return;
 
 fail:
