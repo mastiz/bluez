@@ -66,8 +66,8 @@ struct connect_cb {
 struct gateway {
 	gateway_state_t state;
 	GIOChannel *rfcomm;
+	GIOChannel *tmp_rfcomm;
 	GIOChannel *sco;
-	GIOChannel *incoming;
 	guint rfcomm_id;
 	guint sco_id;
 	GSList *callbacks;
@@ -422,7 +422,7 @@ static void get_incoming_record_cb(sdp_list_t *recs, int err,
 	if (gw->version == 0)
 		goto fail;
 
-	rfcomm_connect_cb(gw->incoming, gerr, dev);
+	rfcomm_connect_cb(gw->tmp_rfcomm, gerr, dev);
 	return;
 
 fail:
@@ -434,9 +434,9 @@ static void unregister_incoming(gpointer user_data)
 	struct audio_device *dev = user_data;
 	struct gateway *gw = dev->gateway;
 
-	if (gw->incoming) {
-		g_io_channel_unref(gw->incoming);
-		gw->incoming = NULL;
+	if (gw->tmp_rfcomm) {
+		g_io_channel_unref(gw->tmp_rfcomm);
+		gw->tmp_rfcomm = NULL;
 	}
 }
 
@@ -447,7 +447,7 @@ static void rfcomm_incoming_cb(GIOChannel *chan, GError *err,
 	struct gateway *gw = dev->gateway;
 	uuid_t uuid;
 
-	gw->incoming = g_io_channel_ref(chan);
+	gw->tmp_rfcomm = g_io_channel_ref(chan);
 
 	sdp_uuid16_create(&uuid, HANDSFREE_AGW_SVCLASS_ID);
 	if (bt_search_service(&dev->src, &dev->dst, &uuid,
