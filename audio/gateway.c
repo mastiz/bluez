@@ -386,9 +386,6 @@ static void rfcomm_connect_cb(GIOChannel *chan, GError *err,
 	return;
 
 fail:
-	if (gw->msg)
-		pending_connect_finalize(dev, "Connect failed");
-
 	gateway_close(dev);
 }
 
@@ -608,6 +605,9 @@ int gateway_close(struct audio_device *device)
 	GError *gerr = NULL;
 	struct gateway *gw = device->gateway;
 	int sock;
+
+	if (gw->msg)
+		pending_connect_finalize(device, "Connect failed");
 
 	if (gw->discovering) {
 		char gw_addr[18];
