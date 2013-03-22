@@ -66,6 +66,7 @@ struct connect_cb {
 
 struct gateway {
 	gateway_state_t state;
+	gboolean discovering;
 	GIOChannel *rfcomm;
 	GIOChannel *tmp_rfcomm;
 	GIOChannel *sco;
@@ -464,6 +465,8 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 	GIOChannel *io;
 	GError *gerr = NULL;
 
+	gw->discovering = FALSE;
+
 	if (err < 0) {
 		error("Unable to get service record: %s (%d)", strerror(-err),
 					-err);
@@ -560,6 +563,7 @@ static int get_records(struct audio_device *device)
 	if (err < 0)
 		return err;
 
+	device->gateway->discovering = TRUE;
 	change_state(device, GATEWAY_STATE_CONNECTING);
 
 	return 0;
@@ -594,6 +598,16 @@ int gateway_close(struct audio_device *device)
 	GError *gerr = NULL;
 	struct gateway *gw = device->gateway;
 	int sock;
+
+	if (gw->discovering) {
+		char gw_addr[18];
+
+		ba2str(&device->dst, gw_addr);
+		DBG("Canceling discovery for %s", gw_addr);
+
+		bt_cancel_discovery(&device->src, &device->dst);
+		gw->discovering = FALSE;
+	}
 
 	if (gw->rfcomm_id != 0) {
 		g_source_remove(gw->rfcomm_id);
