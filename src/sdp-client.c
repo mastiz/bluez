@@ -33,6 +33,7 @@
 
 #include <glib.h>
 
+#include "log.h"
 #include "btio.h"
 #include "sdp-client.h"
 
@@ -290,8 +291,10 @@ static int create_search_context(struct search_context **ctxt,
 		return -EINVAL;
 
 	s = get_sdp_session(src, dst);
-	if (!s)
+	if (!s) {
+		DBG("Could not create SDP search context (%d)", -errno);
 		return -errno;
+	}
 
 	*ctxt = g_try_malloc0(sizeof(struct search_context));
 	if (!*ctxt) {
