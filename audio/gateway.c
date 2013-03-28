@@ -137,6 +137,8 @@ static void change_state(struct audio_device *dev, gateway_state_t new_state)
 	old_state = gw->state;
 	gw->state = new_state;
 
+	DBG("%s->%s", state2str(old_state), val);
+
 	emit_property_changed(dev->conn, dev->path,
 			AUDIO_GATEWAY_INTERFACE, "State",
 			DBUS_TYPE_STRING, &val);
@@ -356,6 +358,8 @@ static void rfcomm_connect_cb(GIOChannel *chan, GError *err,
 	struct gateway *gw = dev->gateway;
 	int sk, ret;
 
+	DBG("chan %p err %p msg %p", chan, err, gw->msg);
+
 	if (err) {
 		error("connect(): %s", err->message);
 		goto fail;
@@ -544,6 +548,8 @@ static void get_record_cb(sdp_list_t *recs, int err, gpointer user_data)
 		goto fail;
 	}
 
+	DBG("Connecting RFCOMM %p", io);
+
 	gw->tmp_rfcomm = io;
 	return;
 
@@ -605,6 +611,9 @@ int gateway_close(struct audio_device *device)
 	GError *gerr = NULL;
 	struct gateway *gw = device->gateway;
 	int sock;
+
+	DBG("discovering %d tmp_rfcomm=%p rfcomm=%p msg %p", gw->discovering,
+					gw->tmp_rfcomm, gw->rfcomm, gw->msg);
 
 	if (gw->msg)
 		pending_connect_finalize(device, "Connect failed");
