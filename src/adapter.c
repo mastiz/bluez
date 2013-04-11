@@ -161,6 +161,7 @@ struct btd_adapter {
 	GSList *loaded_drivers;
 };
 
+static void off_timer_remove(struct btd_adapter *adapter);
 static gboolean process_auth_queue(gpointer user_data);
 
 static void dev_info_free(void *data)
@@ -273,6 +274,29 @@ static struct session_req *find_session_by_msg(GSList *list, const DBusMessage *
 	return NULL;
 }
 
+static gboolean set_mode_off_continue(gpointer user_data)
+{
+	struct btd_adapter *adapter = user_data;
+	DBusMessage *reply;
+	int err;
+
+	err = adapter_ops->set_powered(adapter->dev_id, FALSE);
+	if (err >= 0)
+		return FALSE;
+
+	adapter->off_requested = FALSE;
+
+	if (adapter->pending_mode == NULL)
+		return FALSE;
+
+	reply = btd_error_failed(adapter->pending_mode->msg, strerror(-err));
+	g_dbus_send_message(connection, reply);
+
+	adapter->pending_mode = NULL;
+
+	return FALSE;
+}
+
 static int set_mode(struct btd_adapter *adapter, uint8_t new_mode,
 			DBusMessage *msg)
 {
@@ -291,6 +315,21 @@ static int set_mode(struct btd_adapter *adapter, uint8_t new_mode,
 	}
 
 	if (adapter->up && new_mode == MODE_OFF) {
+		if (adapter->connections != NULL) {
+			adapter->off_requested = TRUE;
+
+			g_slist_foreach(adapter->connections,
+				(GFunc) device_request_disconnect, NULL);
+
+			if (adapter->off_timer)
+				off_timer_remove(adapter);
+
+			adapter->off_timer = g_timeout_add_seconds(OFF_TIMER,
+						set_mode_off_continue, adapter);
+
+			goto done;
+		}
+
 		err = adapter_ops->set_powered(adapter->dev_id, FALSE);
 		if (err < 0)
 			return err;
