@@ -512,6 +512,9 @@ static void source_free(struct audio_device *dev)
 		avdtp_stream_remove_cb(source->session, source->stream,
 					source->cb_id);
 
+	if (source->connect && source->session)
+		avdtp_cancel_discovery(source->session);
+
 	if (source->session)
 		avdtp_unref(source->session);
 
