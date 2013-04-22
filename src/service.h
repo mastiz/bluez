@@ -43,10 +43,10 @@ void btd_service_unref(struct btd_service *service);
 struct btd_service *service_create(struct btd_device *device,
 						struct btd_profile *profile);
 
-void service_probed(struct btd_service *service);
+int service_probe(struct btd_service *service);
 void service_connecting(struct btd_service *service);
 void service_disconnecting(struct btd_service *service);
-void service_unavailable(struct btd_service *service);
+void service_unprobe(struct btd_service *service);
 
 /* State access */
 struct btd_device *btd_service_get_device(const struct btd_service *service);

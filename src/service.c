@@ -142,10 +142,25 @@ struct btd_service *service_create(struct btd_device *device,
 	return service;
 }
 
-void service_probed(struct btd_service *service)
+int service_probe(struct btd_service *service)
 {
+	int err;
+
 	assert(service->state == BTD_SERVICE_STATE_UNAVAILABLE);
+
+	err = service->profile->device_probe(service);
+	if (err < 0) {
+		char addr[18];
+
+		ba2str(device_get_address(service->device), addr);
+		error("%s profile probe failed for %s",
+						service->profile->name, addr);
+		return err;
+	}
+
 	service_set_state(service, BTD_SERVICE_STATE_DISCONNECTED);
+
+	return 0;
 }
 
 void service_connecting(struct btd_service *service)
@@ -163,8 +178,9 @@ void service_disconnecting(struct btd_service *service)
 	service_set_state(service, BTD_SERVICE_STATE_DISCONNECTING);
 }
 
-void service_unavailable(struct btd_service *service)
+void service_unprobe(struct btd_service *service)
 {
+	service->profile->device_remove(service);
 	service->device = NULL;
 	service->profile = NULL;
 	service->err = 0;
