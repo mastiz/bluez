@@ -1001,23 +1001,7 @@ static void bonding_request_cancel(struct bonding_req *bonding)
 
 static void dev_disconn_service(gpointer a, gpointer b)
 {
-	struct btd_service *service = a;
-	struct btd_profile *profile = btd_service_get_profile(service);
-	btd_service_state_t state = btd_service_get_state(service);
-	int err;
-
-	if (!profile->disconnect)
-		return;
-
-	if (state != BTD_SERVICE_STATE_CONNECTING &&
-					state != BTD_SERVICE_STATE_CONNECTED)
-		return;
-
-	service_disconnecting(service);
-
-	err = profile->disconnect(service);
-	if (err != 0)
-		btd_service_disconnecting_complete(service, err);
+	service_disconnect(a);
 }
 
 void device_request_disconnect(struct btd_device *device, DBusMessage *msg)
@@ -1091,32 +1075,13 @@ static DBusMessage *disconnect(DBusConnection *conn, DBusMessage *msg,
 static int connect_next(struct btd_device *dev)
 {
 	struct btd_service *service;
-	struct btd_profile *profile;
 	int err = -ENOENT;
 
 	while (dev->pending) {
-		int err;
-
 		service = dev->pending->data;
-		profile = btd_service_get_profile(service);
 
-		if (btd_service_get_state(service) !=
-					BTD_SERVICE_STATE_DISCONNECTED) {
-			dev->pending = g_slist_delete_link(dev->pending,
-								dev->pending);
-			continue;
-		}
-
-		service_connecting(service);
-
-		err = profile->connect(service);
-		if (err == 0)
+		if (service_connect(service) == 0)
 			return 0;
-
-		btd_service_connecting_complete(service, err);
-
-		error("Failed to connect %s: %s", profile->name,
-							strerror(-err));
 
 		dev->pending = g_slist_delete_link(dev->pending, dev->pending);
 	}
@@ -1365,7 +1330,6 @@ static DBusMessage *disconnect_profile(DBusConnection *conn, DBusMessage *msg,
 {
 	struct btd_device *dev = user_data;
 	struct btd_service *service;
-	struct btd_profile *p;
 	const char *pattern;
 	char *uuid;
 	int err;
@@ -1384,22 +1348,16 @@ static DBusMessage *disconnect_profile(DBusConnection *conn, DBusMessage *msg,
 	if (!service)
 		return btd_error_invalid_args(msg);
 
-	p = btd_service_get_profile(service);
-
-	if (!p->disconnect)
-		return btd_error_not_supported(msg);
-
-	service_disconnecting(service);
-
-	err = p->disconnect(service);
-	if (err < 0) {
-		btd_service_disconnecting_complete(service, err);
-		return btd_error_failed(msg, strerror(-err));
+	err = service_disconnect(service);
+	if (err == 0) {
+		dev->disconnect = dbus_message_ref(msg);
+		return NULL;
 	}
 
-	dev->disconnect = dbus_message_ref(msg);
+	if (err == -ENOTSUP)
+		return btd_error_not_supported(msg);
 
-	return NULL;
+	return btd_error_failed(msg, strerror(-err));
 }
 
 static void device_svc_resolved(struct btd_device *dev, int err)

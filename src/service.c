@@ -163,19 +163,75 @@ int service_probe(struct btd_service *service)
 	return 0;
 }
 
-void service_connecting(struct btd_service *service)
+int service_connect(struct btd_service *service)
 {
-	assert(service->state == BTD_SERVICE_STATE_DISCONNECTED);
+	struct btd_profile *profile = service->profile;
+	char addr[18];
+	int err;
+
+	switch (service->state) {
+	case BTD_SERVICE_STATE_UNAVAILABLE:
+		return -EINVAL;
+	case BTD_SERVICE_STATE_DISCONNECTED:
+		break;
+	case BTD_SERVICE_STATE_CONNECTING:
+	case BTD_SERVICE_STATE_CONNECTED:
+		return -EALREADY;
+	case BTD_SERVICE_STATE_DISCONNECTING:
+		return -EBUSY;
+	}
+
+	if (!profile->disconnect)
+		return -ENOTSUP;
+
 	service->err = 0;
 	service_set_state(service, BTD_SERVICE_STATE_CONNECTING);
+
+	err = profile->connect(service);
+	if (err == 0)
+		return 0;
+
+	ba2str(device_get_address(service->device), addr);
+	error("%s profile connect failed for %s: %s", profile->name, addr,
+								strerror(-err));
+
+	btd_service_connecting_complete(service, err);
+	return err;
 }
 
-void service_disconnecting(struct btd_service *service)
+int service_disconnect(struct btd_service *service)
 {
-	assert(service->state == BTD_SERVICE_STATE_CONNECTING ||
-				service->state == BTD_SERVICE_STATE_CONNECTED);
+	struct btd_profile *profile = service->profile;
+	char addr[18];
+	int err;
+
+	switch (service->state) {
+	case BTD_SERVICE_STATE_UNAVAILABLE:
+		return -EINVAL;
+	case BTD_SERVICE_STATE_DISCONNECTED:
+	case BTD_SERVICE_STATE_DISCONNECTING:
+		return -EALREADY;
+	case BTD_SERVICE_STATE_CONNECTING:
+	case BTD_SERVICE_STATE_CONNECTED:
+		break;
+	}
+
+	if (!profile->disconnect)
+		return -ENOTSUP;
+
 	service->err = 0;
 	service_set_state(service, BTD_SERVICE_STATE_DISCONNECTING);
+
+	err = profile->disconnect(service);
+	if (err == 0)
+		return 0;
+
+	ba2str(device_get_address(service->device), addr);
+	error("%s profile disconnect failed for %s: %s", profile->name, addr,
+								strerror(-err));
+
+	btd_service_disconnecting_complete(service, err);
+	return err;
 }
 
 void service_unprobe(struct btd_service *service)

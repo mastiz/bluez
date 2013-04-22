@@ -44,8 +44,8 @@ struct btd_service *service_create(struct btd_device *device,
 						struct btd_profile *profile);
 
 int service_probe(struct btd_service *service);
-void service_connecting(struct btd_service *service);
-void service_disconnecting(struct btd_service *service);
+int service_connect(struct btd_service *service);
+int service_disconnect(struct btd_service *service);
 void service_unprobe(struct btd_service *service);
 
 /* State access */
