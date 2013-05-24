@@ -761,17 +761,17 @@ struct confirm_data {
 	uint8_t type;
 };
 
-static gboolean confirm_accept(gpointer user_data)
+static gboolean auto_reject_without_mitmp(gpointer user_data)
 {
 	struct confirm_data *data = user_data;
 	struct controller_info *info = &controllers[data->index];
 
-	DBG("auto-accepting incoming pairing request");
+	DBG("auto-rejecting pairing request without MITM protection (kernel patch missing?)");
 
 	if (data->index > max_index || !info->valid)
 		return FALSE;
 
-	mgmt_confirm_reply(data->index, &data->bdaddr, data->type, TRUE);
+	mgmt_confirm_reply(data->index, &data->bdaddr, data->type, FALSE);
 
 	return FALSE;
 }
@@ -808,7 +808,8 @@ static void mgmt_user_confirm_request(int sk, uint16_t index, void *buf,
 		data->type = ev->addr.type;
 
 		g_timeout_add_seconds_full(G_PRIORITY_DEFAULT, 1,
-						confirm_accept, data, g_free);
+						auto_reject_without_mitmp,
+						data, g_free);
 		return;
 	}
 
