@@ -75,66 +75,6 @@ done:
 				conf_security ? "true" : "false");
 }
 
-static int panu_server_probe(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	return server_register(adapter, BNEP_SVC_PANU);
-}
-
-static void panu_server_remove(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	server_unregister(adapter, BNEP_SVC_PANU);
-}
-
-static int gn_server_probe(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	return server_register(adapter, BNEP_SVC_GN);
-}
-
-static void gn_server_remove(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	server_unregister(adapter, BNEP_SVC_GN);
-}
-
-static int nap_server_probe(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	return server_register(adapter, BNEP_SVC_NAP);
-}
-
-static void nap_server_remove(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	server_unregister(adapter, BNEP_SVC_NAP);
-}
-
 static struct btd_profile panu_profile = {
 	.name		= "network-panu",
 	.local_uuid	= NAP_UUID,
@@ -143,8 +83,8 @@ static struct btd_profile panu_profile = {
 	.device_remove	= connection_unregister,
 	.connect	= connection_connect,
 	.disconnect	= connection_disconnect,
-	.adapter_probe	= panu_server_probe,
-	.adapter_remove	= panu_server_remove,
+	.adapter_probe	= network_server_probe,
+	.adapter_remove	= network_server_remove,
 };
 
 static struct btd_profile gn_profile = {
@@ -155,8 +95,8 @@ static struct btd_profile gn_profile = {
 	.device_remove	= connection_unregister,
 	.connect	= connection_connect,
 	.disconnect	= connection_disconnect,
-	.adapter_probe	= gn_server_probe,
-	.adapter_remove	= gn_server_remove,
+	.adapter_probe	= network_server_probe,
+	.adapter_remove	= network_server_remove,
 };
 
 static struct btd_profile nap_profile = {
@@ -167,8 +107,8 @@ static struct btd_profile nap_profile = {
 	.device_remove	= connection_unregister,
 	.connect	= connection_connect,
 	.disconnect	= connection_disconnect,
-	.adapter_probe	= nap_server_probe,
-	.adapter_remove	= nap_server_remove,
+	.adapter_probe	= network_server_probe,
+	.adapter_remove	= network_server_remove,
 };
 
 static int network_init(void)

@@ -43,6 +43,8 @@
 #include "lib/uuid.h"
 #include "../src/dbus-common.h"
 #include "../src/adapter.h"
+#include "../src/profile.h"
+#include "../src/server.h"
 
 #include "log.h"
 #include "error.h"
@@ -786,11 +788,18 @@ static struct network_adapter *create_adapter(struct btd_adapter *adapter)
 	return na;
 }
 
-int server_register(struct btd_adapter *adapter, uint16_t id)
+int network_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct network_adapter *na;
 	struct network_server *ns;
-	const char *path;
+	const char *path = adapter_get_path(adapter);
+	const char *uuid = btd_server_get_profile(server)->remote_uuid;
+	uint16_t id;
+
+	DBG("path %s uuid %s", path, uuid);
+
+	id = bnep_service_id(uuid);
 
 	na = find_adapter(adapters, adapter);
 	if (!na) {
@@ -807,8 +816,6 @@ int server_register(struct btd_adapter *adapter, uint16_t id)
 	ns = g_new0(struct network_server, 1);
 
 	ns->name = g_strdup("Network service");
-
-	path = adapter_get_path(adapter);
 
 	if (g_slist_length(na->servers) > 0)
 		goto done;
@@ -836,28 +843,33 @@ done:
 	return 0;
 }
 
-int server_unregister(struct btd_adapter *adapter, uint16_t id)
+void network_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct network_adapter *na;
 	struct network_server *ns;
+	const char *uuid = btd_server_get_profile(server)->remote_uuid;
+	uint16_t id;
+
+	DBG("path %s uuid %s", adapter_get_path(adapter), uuid);
+
+	id = bnep_service_id(uuid);
 
 	na = find_adapter(adapters, adapter);
 	if (!na)
-		return -EINVAL;
+		return;
 
 	ns = find_server(na, id);
 	if (!ns)
-		return -EINVAL;
+		return;
 
 	na->servers = g_slist_remove(na->servers, ns);
 	server_free(ns);
 
 	if (g_slist_length(na->servers) > 0)
-		return 0;
+		return;
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 						adapter_get_path(adapter),
 						NETWORK_SERVER_INTERFACE);
-
-	return 0;
 }
