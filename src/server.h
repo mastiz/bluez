@@ -21,8 +21,11 @@
  *
  */
 
+#include "btio/btio.h"
+
 struct btd_adapter;
 struct btd_profile;
+struct btd_connection;
 
 /* Server management functions used by the core */
 struct btd_server *server_create(struct btd_adapter *adapter,
@@ -36,3 +39,12 @@ struct btd_profile *btd_server_get_profile(const struct btd_server *server);
 /* Functions used by profile implementation */
 void btd_server_set_user_data(struct btd_server *server, void *user_data);
 void *btd_server_get_user_data(const struct btd_server *server);
+
+/* Socket handling helper API */
+typedef int (*btd_server_accept_cb) (struct btd_connection *conn);
+typedef void (*btd_server_disconn_cb) (struct btd_connection *conn);
+
+GIOChannel *btd_server_listen(struct btd_server *server, bool authorize,
+					btd_server_accept_cb accept_cb,
+					btd_server_disconn_cb disconn_cb,
+					BtIOOption opt1, ...);
