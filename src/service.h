@@ -94,3 +94,10 @@ struct btd_connection *btd_service_incoming_conn(
 					GIOChannel *io, bool authorize,
 					btd_connection_connect_cb connect_cb,
 					btd_connection_disconn_cb disconn_cb);
+
+struct btd_connection *btd_service_outgoing_conn(
+					struct btd_server *server,
+					struct btd_service *service,
+					btd_connection_connect_cb connect_cb,
+					btd_connection_disconn_cb disconn_cb,
+					BtIOOption opt1, ...);

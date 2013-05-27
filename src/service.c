@@ -577,6 +577,49 @@ struct btd_connection *btd_service_incoming_conn(
 	return NULL;
 }
 
+
+struct btd_connection *btd_service_outgoing_conn(
+					struct btd_server *server,
+					struct btd_service *service,
+					btd_connection_connect_cb connect_cb,
+					btd_connection_disconn_cb disconn_cb,
+					BtIOOption opt1, ...)
+{
+	struct btd_connection *conn;
+	struct BtIOSetOpts *opts;
+	struct btd_device *device = service->device;
+	const bdaddr_t *dst = device_get_address(device);
+	const bdaddr_t *src = adapter_get_address(device_get_adapter(device));
+	GIOChannel *io;
+	GError *err = NULL;
+	va_list args;
+
+	va_start(args, opt1);
+	opts = bt_io_set_opts_new();
+	bt_io_set_opts_parse_valist(opts, &err, opt1, args);
+	va_end(args);
+
+	bt_io_set_opts_parse(opts, &err, BT_IO_OPT_SOURCE_BDADDR, src,
+					BT_IO_OPT_DEST_BDADDR, dst,
+					BT_IO_OPT_INVALID);
+
+	conn = connection_add(server, service, connect_cb, disconn_cb);
+
+	io = bt_io_connect_opts(connection_connected, conn, NULL, &err, opts);
+	g_free(opts);
+
+	if (io == NULL) {
+		error("%s", err->message);
+		g_error_free(err);
+		connection_remove(conn);
+		return NULL;
+	}
+
+	connection_set_io(conn, io);
+
+	return conn;
+}
+
 struct btd_server *btd_connection_get_server(struct btd_connection *conn)
 {
 	return conn->server;
