@@ -57,6 +57,7 @@
 #include "adapter.h"
 #include "device.h"
 #include "profile.h"
+#include "server.h"
 #include "dbus-common.h"
 #include "error.h"
 #include "glib-helper.h"
@@ -178,7 +179,7 @@ struct btd_adapter {
 	GSList *pin_callbacks;
 
 	GSList *drivers;
-	GSList *profiles;
+	GSList *servers;
 
 	struct oob_handler *oob_handler;
 
@@ -2621,18 +2622,16 @@ static void load_drivers(struct btd_adapter *adapter)
 static void probe_profile(struct btd_profile *profile, void *data)
 {
 	struct btd_adapter *adapter = data;
-	int err;
+	struct btd_server *server;
 
 	if (profile->adapter_probe == NULL)
 		return;
 
-	err = profile->adapter_probe(profile, adapter);
-	if (err < 0) {
-		error("%s: %s (%d)", profile->name, strerror(-err), -err);
+	server = server_create(adapter, profile);
+	if (server == NULL)
 		return;
-	}
 
-	adapter->profiles = g_slist_prepend(adapter->profiles, profile);
+	adapter->servers = g_slist_prepend(adapter->servers, server);
 }
 
 void adapter_add_profile(struct btd_adapter *adapter, gpointer p)
@@ -2650,6 +2649,7 @@ void adapter_add_profile(struct btd_adapter *adapter, gpointer p)
 void adapter_remove_profile(struct btd_adapter *adapter, gpointer p)
 {
 	struct btd_profile *profile = p;
+	struct btd_server *server;
 
 	if (!adapter->initialized)
 		return;
@@ -2657,10 +2657,26 @@ void adapter_remove_profile(struct btd_adapter *adapter, gpointer p)
 	if (profile->device_remove)
 		g_slist_foreach(adapter->devices, device_remove_profile, p);
 
-	adapter->profiles = g_slist_remove(adapter->profiles, profile);
+	server = btd_adapter_get_server(adapter, profile->local_uuid);
+	adapter->servers = g_slist_remove(adapter->servers, server);
 
-	if (profile->adapter_remove)
-		profile->adapter_remove(profile, adapter);
+	server_destroy(server);
+}
+
+struct btd_server *btd_adapter_get_server(struct btd_adapter *adapter,
+							const char *local_uuid)
+{
+	GSList *l;
+
+	for (l = adapter->servers; l != NULL; l = g_slist_next(l)) {
+		struct btd_server *server = l->data;
+		struct btd_profile *p = btd_server_get_profile(server);
+
+		if (g_strcmp0(p->local_uuid, local_uuid) == 0)
+			return server;
+	}
+
+	return NULL;
 }
 
 static void adapter_add_connection(struct btd_adapter *adapter,
@@ -2873,24 +2889,14 @@ static void remove_driver(gpointer data, gpointer user_data)
 		driver->remove(adapter);
 }
 
-static void remove_profile(gpointer data, gpointer user_data)
-{
-	struct btd_profile *profile = data;
-	struct btd_adapter *adapter = user_data;
-
-	if (profile->adapter_remove)
-		profile->adapter_remove(profile, adapter);
-}
-
 static void unload_drivers(struct btd_adapter *adapter)
 {
 	g_slist_foreach(adapter->drivers, remove_driver, adapter);
 	g_slist_free(adapter->drivers);
 	adapter->drivers = NULL;
 
-	g_slist_foreach(adapter->profiles, remove_profile, adapter);
-	g_slist_free(adapter->profiles);
-	adapter->profiles = NULL;
+	g_slist_free_full(adapter->servers, (GDestroyNotify) server_destroy);
+	adapter->servers = NULL;
 }
 
 static void free_service_auth(gpointer data, gpointer user_data)
