@@ -279,7 +279,7 @@ static int a2dp_source_server_probe(struct btd_server *server)
 
 	DBG("path %s", adapter_get_path(adapter));
 
-	return a2dp_source_register(adapter, config);
+	return a2dp_source_register(adapter);
 }
 
 static void a2dp_source_server_remove(struct btd_server *server)
@@ -297,7 +297,7 @@ static int a2dp_sink_server_probe(struct btd_server *server)
 
 	DBG("path %s", adapter_get_path(adapter));
 
-	return a2dp_sink_register(adapter, config);
+	return a2dp_sink_register(adapter);
 }
 
 static void a2dp_sink_server_remove(struct btd_server *server)
@@ -424,8 +424,14 @@ static struct btd_adapter_driver media_driver = {
 
 int audio_manager_init(GKeyFile *conf)
 {
+	int err;
+
 	if (conf)
 		config = conf;
+
+	err = avdtp_server_init(conf);
+	if (err < 0)
+		return err;
 
 	btd_profile_register(&a2dp_source_profile);
 	btd_profile_register(&a2dp_sink_profile);
@@ -450,6 +456,8 @@ void audio_manager_exit(void)
 	btd_profile_unregister(&avrcp_target_profile);
 
 	btd_unregister_adapter_driver(&media_driver);
+
+	avdtp_server_exit();
 }
 
 struct audio_device *manager_get_audio_device(struct btd_device *device,

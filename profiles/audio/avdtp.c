@@ -431,6 +431,8 @@ struct avdtp {
 	DBusPendingCall *pending_auth;
 };
 
+static gboolean master = TRUE;
+
 static GSList *servers = NULL;
 
 static GSList *avdtp_callbacks = NULL;
@@ -3776,7 +3778,7 @@ int avdtp_unregister_sep(struct avdtp_local_sep *sep)
 	return 0;
 }
 
-static GIOChannel *avdtp_server_socket(const bdaddr_t *src, gboolean master)
+static GIOChannel *avdtp_server_socket(const bdaddr_t *src)
 {
 	GError *err = NULL;
 	GIOChannel *io;
@@ -3856,27 +3858,13 @@ struct btd_device *avdtp_get_device(struct avdtp *session)
 	return session->device;
 }
 
-int avdtp_init(struct btd_adapter *adapter, GKeyFile *config)
+int avdtp_init(struct btd_adapter *adapter)
 {
-	GError *err = NULL;
-	gboolean tmp, master = TRUE;
 	struct avdtp_server *server;
 
-	if (!config)
-		goto proceed;
-
-	tmp = g_key_file_get_boolean(config, "General",
-			"Master", &err);
-	if (err) {
-		DBG("audio.conf: %s", err->message);
-		g_clear_error(&err);
-	} else
-		master = tmp;
-
-proceed:
 	server = g_new0(struct avdtp_server, 1);
 
-	server->io = avdtp_server_socket(adapter_get_address(adapter), master);
+	server->io = avdtp_server_socket(adapter_get_address(adapter));
 	if (!server->io) {
 		g_free(server);
 		return -1;
@@ -3952,4 +3940,27 @@ gboolean avdtp_remove_state_cb(unsigned int id)
 	}
 
 	return FALSE;
+}
+
+int avdtp_server_init(GKeyFile *config)
+{
+	GError *err = NULL;
+	gboolean tmp;
+
+	if (config == NULL)
+		return 0;
+
+	tmp = g_key_file_get_boolean(config, "General", "Master", &err);
+
+	if (err != NULL) {
+		DBG("audio.conf: %s", err->message);
+		g_clear_error(&err);
+	} else
+		master = tmp;
+
+	return 0;
+}
+
+void avdtp_server_exit(void)
+{
 }

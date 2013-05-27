@@ -1199,15 +1199,14 @@ static struct a2dp_server *find_server(GSList *list, struct btd_adapter *a)
 	return NULL;
 }
 
-static struct a2dp_server *a2dp_server_register(struct btd_adapter *adapter,
-							GKeyFile *config)
+static struct a2dp_server *a2dp_server_register(struct btd_adapter *adapter)
 {
 	struct a2dp_server *server;
 	int av_err;
 
 	server = g_new0(struct a2dp_server, 1);
 
-	av_err = avdtp_init(adapter, config);
+	av_err = avdtp_init(adapter);
 	if (av_err < 0) {
 		DBG("AVDTP not registered");
 		g_free(server);
@@ -1220,7 +1219,7 @@ static struct a2dp_server *a2dp_server_register(struct btd_adapter *adapter,
 	return server;
 }
 
-int a2dp_source_register(struct btd_adapter *adapter, GKeyFile *config)
+int a2dp_source_register(struct btd_adapter *adapter)
 {
 	struct a2dp_server *server;
 
@@ -1228,7 +1227,7 @@ int a2dp_source_register(struct btd_adapter *adapter, GKeyFile *config)
 	if (server != NULL)
 		goto done;
 
-	server = a2dp_server_register(adapter, config);
+	server = a2dp_server_register(adapter);
 	if (server == NULL)
 		return -EPROTONOSUPPORT;
 
@@ -1238,7 +1237,7 @@ done:
 	return 0;
 }
 
-int a2dp_sink_register(struct btd_adapter *adapter, GKeyFile *config)
+int a2dp_sink_register(struct btd_adapter *adapter)
 {
 	struct a2dp_server *server;
 
@@ -1246,7 +1245,7 @@ int a2dp_sink_register(struct btd_adapter *adapter, GKeyFile *config)
 	if (server != NULL)
 		goto done;
 
-	server = a2dp_server_register(adapter, config);
+	server = a2dp_server_register(adapter);
 	if (server == NULL)
 		return -EPROTONOSUPPORT;
 
