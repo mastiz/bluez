@@ -53,12 +53,28 @@ struct btd_service {
 	void			*user_data;
 	btd_service_state_t	state;
 	int			err;
+	GSList			*conns;
 };
 
 struct service_state_callback {
 	btd_service_state_cb	cb;
 	void			*user_data;
 	unsigned int		id;
+};
+
+struct btd_connection {
+	struct btd_server	*server;
+	struct btd_service	*service;
+	GIOChannel		*io;
+	bool			connected;
+	uint16_t		psm;
+	uint8_t			chan;
+	guint			io_watch;
+	unsigned int		svc_id;
+	guint			auth_id;
+	btd_connection_connect_cb connect_cb;
+	btd_connection_disconn_cb disconn_cb;
+	void			*user_data;
 };
 
 static GSList *state_callbacks = NULL;
@@ -79,6 +95,36 @@ static const char *state2str(btd_service_state_t state)
 	}
 
 	return NULL;
+}
+
+static void connection_free(gpointer data)
+{
+	struct btd_connection *conn = data;
+	struct btd_service *service = conn->service;
+
+	if (conn->auth_id != 0)
+		btd_cancel_authorization(conn->auth_id);
+
+	if (conn->svc_id != 0)
+		device_remove_svc_complete_callback(service->device,
+								conn->svc_id);
+
+	if (conn->io_watch != 0)
+		g_source_remove(conn->io_watch);
+
+	if (conn->io != NULL)
+		g_io_channel_shutdown(conn->io, FALSE, NULL);
+
+	if (!conn->connected && conn->connect_cb != NULL)
+		conn->connect_cb(conn, -EIO);
+
+	if (conn->connected && conn->disconn_cb != NULL)
+		conn->disconn_cb(conn);
+
+	if (conn->io != NULL)
+		g_io_channel_unref(conn->io);
+
+	g_free(conn);
 }
 
 static void change_state(struct btd_service *service, btd_service_state_t state,
@@ -171,6 +217,10 @@ int service_probe(struct btd_service *service)
 void service_shutdown(struct btd_service *service)
 {
 	change_state(service, BTD_SERVICE_STATE_UNAVAILABLE, 0);
+
+	g_slist_free_full(service->conns, connection_free);
+	service->conns = NULL;
+
 	service->profile->device_remove(service);
 	service->device = NULL;
 	service->profile = NULL;
@@ -333,8 +383,241 @@ void btd_service_disconnecting_complete(struct btd_service *service, int err)
 			service->state != BTD_SERVICE_STATE_DISCONNECTING)
 		return;
 
-	if (err == 0)
-		change_state(service, BTD_SERVICE_STATE_DISCONNECTED, 0);
-	else /* If disconnect fails, we assume it remains connected */
+	/* If disconnect fails, we assume it remains connected */
+	if (err < 0) {
 		change_state(service, BTD_SERVICE_STATE_CONNECTED, err);
+		return;
+	}
+
+	g_slist_free_full(service->conns, connection_free);
+	service->conns = NULL;
+
+	change_state(service, BTD_SERVICE_STATE_DISCONNECTED, 0);
+}
+
+static struct btd_connection *connection_add(struct btd_server *server,
+					struct btd_service *service,
+					btd_connection_connect_cb connect_cb,
+					btd_connection_disconn_cb disconn_cb)
+{
+	struct btd_connection *conn;
+
+	conn = g_new0(struct btd_connection, 1);
+	conn->server = server;
+	conn->service = service;
+	conn->connect_cb = connect_cb;
+	conn->disconn_cb = disconn_cb;
+
+	service->conns = g_slist_prepend(service->conns, conn);
+
+	return conn;
+}
+
+static void connection_remove(struct btd_connection *conn)
+{
+	conn->service->conns = g_slist_remove(conn->service->conns, conn);
+	connection_free(conn);
+}
+
+static gboolean connection_disconnected(GIOChannel *io, GIOCondition cond,
+							gpointer user_data)
+{
+	struct btd_connection *conn = user_data;
+	struct btd_service *service = conn->service;
+	struct btd_profile *profile = service->profile;
+	char addr[18];
+
+	if (cond & G_IO_NVAL)
+		return FALSE;
+
+	ba2str(device_get_address(service->device), addr);
+	DBG("%s: connection closed from %s", profile->name, addr);
+
+	connection_remove(conn);
+
+	return FALSE;
+}
+
+static void connection_set_io(struct btd_connection *conn, GIOChannel *io)
+{
+	conn->io = g_io_channel_ref(io);
+	conn->io_watch = g_io_add_watch(io, G_IO_HUP | G_IO_ERR | G_IO_NVAL,
+					connection_disconnected, conn);
+
+	bt_io_get(io, NULL, BT_IO_OPT_PSM, &conn->psm, BT_IO_OPT_INVALID);
+	bt_io_get(io, NULL, BT_IO_OPT_CHANNEL, &conn->chan, BT_IO_OPT_INVALID);
+}
+
+static void connection_connected(GIOChannel *io, GError *err,
+							gpointer user_data)
+{
+	struct btd_connection *conn = user_data;
+	struct btd_service *service = conn->service;
+	const char *name = service->profile->name;
+	char addr[18];
+
+	ba2str(device_get_address(service->device), addr);
+
+	if (err != NULL) {
+		error("%s connect failed to %s: %s", name, addr, err->message);
+		connection_remove(conn);
+	}
+
+	DBG("%s: connected to %s", name, addr);
+
+	if (conn->connect_cb == NULL)
+		return;
+
+	conn->connected = true;
+	conn->connect_cb(conn, 0);
+}
+
+static void connection_accept(struct btd_connection *conn, const char *addr)
+{
+	GError *err = NULL;
+
+	if (!bt_io_accept(conn->io, connection_connected, conn, NULL, &err)) {
+		error("bt_io_accept: %s", err->message);
+		g_error_free(err);
+		connection_remove(conn);
+		return;
+	}
+
+	DBG("%s: accepted connection from %s", conn->service->profile->name,
+									addr);
+}
+
+static void connection_svc_complete(struct btd_device *device, int err,
+								void *user_data)
+{
+	struct btd_connection *conn = user_data;
+	char addr[18];
+
+	conn->svc_id = 0;
+
+	ba2str(device_get_address(device), addr);
+
+	if (err < 0) {
+		error("Service resolving failed for %s: %s (%d)",
+						addr, strerror(-err), -err);
+		connection_remove(conn);
+		return;
+	}
+
+	if (conn->auth_id == 0)
+		connection_accept(conn, addr);
+	else
+		DBG("Services from %s resolved but waiting for authorization",
+									addr);
+}
+
+static void connection_auth(DBusError *err, void *user_data)
+{
+	struct btd_connection *conn = user_data;
+	struct btd_service *service = conn->service;
+	char addr[18];
+
+	conn->auth_id = 0;
+
+	ba2str(device_get_address(service->device), addr);
+
+	if (err && dbus_error_is_set(err)) {
+		error("%s rejected %s: %s", service->profile->name, addr,
+								err->message);
+		connection_remove(conn);
+		return;
+	}
+
+	if (conn->svc_id == 0)
+		connection_accept(conn, addr);
+	else
+		DBG("%s: connection from %s authorized but waiting for SDP",
+						service->profile->name, addr);
+}
+
+struct btd_connection *btd_service_incoming_conn(
+					struct btd_server *server,
+					struct btd_service *service,
+					GIOChannel *io, bool authorize,
+					btd_connection_connect_cb connect_cb,
+					btd_connection_disconn_cb disconn_cb)
+{
+	struct btd_connection *conn;
+	struct btd_device *device = service->device;
+	const char *uuid = service->profile->remote_uuid;
+	const bdaddr_t *src;
+	const bdaddr_t *dst;
+	char addr[18];
+
+	src = adapter_get_address(device_get_adapter(device));
+	dst = device_get_address(device);
+	ba2str(dst, addr);
+
+	conn = connection_add(server, service, connect_cb, disconn_cb);
+	connection_set_io(conn, io);
+	conn->svc_id = device_wait_for_svc_complete(device,
+							connection_svc_complete,
+							conn);
+
+	if (!authorize)
+		return conn;
+
+	DBG("%s: authorizing connection from %s", service->profile->name, addr);
+
+	conn->auth_id = btd_request_authorization(src, dst, uuid,
+							connection_auth,
+							conn);
+
+	if (conn->auth_id != 0)
+		return conn;
+
+	error("%s: authorization failure", service->profile->name);
+	connection_remove(conn);
+
+	return NULL;
+}
+
+struct btd_server *btd_connection_get_server(struct btd_connection *conn)
+{
+	return conn->server;
+}
+
+struct btd_service *btd_connection_get_service(struct btd_connection *conn)
+{
+	return conn->service;
+}
+
+GIOChannel *btd_connection_get_io(struct btd_connection *conn)
+{
+	return conn->io;
+}
+
+void btd_connection_set_user_data(struct btd_connection *conn, void *user_data)
+{
+	conn->user_data = user_data;
+}
+
+void *btd_connection_get_user_data(const struct btd_connection *conn)
+{
+	return conn->user_data;
+}
+
+const bdaddr_t *btd_connection_get_src(const struct btd_connection *conn)
+{
+	return adapter_get_address(device_get_adapter(conn->service->device));
+}
+
+const bdaddr_t *btd_connection_get_dst(const struct btd_connection *conn)
+{
+	return device_get_address(conn->service->device);
+}
+
+uint16_t btd_connection_get_psm(const struct btd_connection *conn)
+{
+	return conn->psm;
+}
+
+uint8_t btd_connection_get_channel(const struct btd_connection *conn)
+{
+	return conn->chan;
 }

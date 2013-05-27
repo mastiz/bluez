@@ -21,6 +21,8 @@
  *
  */
 
+#include "btio/btio.h"
+
 typedef enum {
 	BTD_SERVICE_STATE_UNAVAILABLE, /* Not probed */
 	BTD_SERVICE_STATE_DISCONNECTED,
@@ -30,8 +32,10 @@ typedef enum {
 } btd_service_state_t;
 
 struct btd_service;
+struct btd_connection;
 struct btd_device;
 struct btd_profile;
+struct btd_server;
 
 typedef void (*btd_service_state_cb) (struct btd_service *service,
 						btd_service_state_t old_state,
@@ -67,3 +71,26 @@ void btd_service_connecting_complete(struct btd_service *service, int err);
 void btd_service_disconnecting_complete(struct btd_service *service, int err);
 void btd_service_set_user_data(struct btd_service *service, void *user_data);
 void *btd_service_get_user_data(const struct btd_service *service);
+
+/* btd_connection */
+typedef void (*btd_connection_connect_cb) (struct btd_connection *conn,
+								int err);
+typedef void (*btd_connection_disconn_cb) (struct btd_connection *conn);
+
+struct btd_server *btd_connection_get_server(struct btd_connection *conn);
+struct btd_service *btd_connection_get_service(struct btd_connection *conn);
+GIOChannel *btd_connection_get_io(struct btd_connection *conn);
+void btd_connection_set_user_data(struct btd_connection *conn, void *user_data);
+void *btd_connection_get_user_data(const struct btd_connection *conn);
+
+const bdaddr_t *btd_connection_get_src(const struct btd_connection *conn);
+const bdaddr_t *btd_connection_get_dst(const struct btd_connection *conn);
+uint16_t btd_connection_get_psm(const struct btd_connection *conn);
+uint8_t btd_connection_get_channel(const struct btd_connection *conn);
+
+struct btd_connection *btd_service_incoming_conn(
+					struct btd_server *server,
+					struct btd_service *service,
+					GIOChannel *io, bool authorize,
+					btd_connection_connect_cb connect_cb,
+					btd_connection_disconn_cb disconn_cb);
