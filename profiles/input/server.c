@@ -48,21 +48,12 @@
 #include "device.h"
 #include "server.h"
 
-static GSList *servers = NULL;
 struct input_server {
 	bdaddr_t src;
 	GIOChannel *ctrl;
 	GIOChannel *intr;
 	GIOChannel *confirm;
 };
-
-static int server_cmp(gconstpointer s, gconstpointer user_data)
-{
-	const struct input_server *server = s;
-	const bdaddr_t *src = user_data;
-
-	return bacmp(&server->src, src);
-}
 
 static void connect_event_cb(GIOChannel *chan, GError *err, gpointer data)
 {
@@ -231,23 +222,14 @@ int hid_server_probe(struct btd_server *btd_server)
 		return -1;
 	}
 
-	servers = g_slist_append(servers, server);
+	btd_server_set_user_data(btd_server, server);
 
 	return 0;
 }
 
 void hid_server_remove(struct btd_server *btd_server)
 {
-	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
-	const bdaddr_t *src = adapter_get_address(adapter);
-	struct input_server *server;
-	GSList *l;
-
-	l = g_slist_find_custom(servers, src, server_cmp);
-	if (!l)
-		return;
-
-	server = l->data;
+	struct input_server *server = btd_server_get_user_data(btd_server);
 
 	g_io_channel_shutdown(server->intr, TRUE, NULL);
 	g_io_channel_unref(server->intr);
@@ -255,6 +237,5 @@ void hid_server_remove(struct btd_server *btd_server)
 	g_io_channel_shutdown(server->ctrl, TRUE, NULL);
 	g_io_channel_unref(server->ctrl);
 
-	servers = g_slist_remove(servers, server);
 	g_free(server);
 }
