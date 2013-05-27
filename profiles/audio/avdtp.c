@@ -434,9 +434,6 @@ struct avdtp {
 };
 
 static gboolean master = TRUE;
-
-static GSList *servers = NULL;
-
 static GSList *avdtp_callbacks = NULL;
 
 static int send_request(struct avdtp *session, gboolean priority,
@@ -457,16 +454,14 @@ static void avdtp_sep_set_state(struct avdtp *session,
 				avdtp_state_t state);
 static void auth_cb(DBusError *derr, void *user_data);
 
-static struct avdtp_server *find_server(GSList *list, struct btd_adapter *a)
+static struct avdtp_server *find_server(struct btd_adapter *a)
 {
-	for (; list; list = list->next) {
-		struct avdtp_server *server = list->data;
+	struct btd_server *server = btd_adapter_get_server(a, AVDTP_UUID_STR);
 
-		if (server->adapter == a)
-			return server;
-	}
+	if (server == NULL)
+		return NULL;
 
-	return NULL;
+	return btd_server_get_user_data(server);
 }
 
 static const char *avdtp_statestr(avdtp_state_t state)
@@ -2325,7 +2320,7 @@ static struct avdtp *avdtp_get_internal(struct btd_device *device)
 	struct avdtp_server *server;
 	struct avdtp *session;
 
-	server = find_server(servers, device_get_adapter(device));
+	server = find_server(device_get_adapter(device));
 	if (server == NULL)
 		return NULL;
 
@@ -3195,7 +3190,7 @@ gboolean avdtp_is_connected(struct audio_device *device)
 	struct avdtp_server *server;
 	struct avdtp *session;
 
-	server = find_server(servers, device_get_adapter(device->btd_dev));
+	server = find_server(device_get_adapter(device->btd_dev));
 	if (!server)
 		return FALSE;
 
@@ -3732,7 +3727,7 @@ struct avdtp_local_sep *avdtp_register_sep(struct btd_adapter *adapter,
 	struct avdtp_server *server;
 	struct avdtp_local_sep *sep;
 
-	server = find_server(servers, adapter);
+	server = find_server(adapter);
 	if (!server)
 		return NULL;
 
@@ -3877,7 +3872,7 @@ static int avdtp_server_probe(struct btd_server *btd_server)
 
 	server->adapter = btd_adapter_ref(adapter);
 
-	servers = g_slist_append(servers, server);
+	btd_server_set_user_data(btd_server, server);
 
 	return 0;
 }
@@ -3889,13 +3884,11 @@ static void avdtp_server_remove(struct btd_server *btd_server)
 
 	DBG("path %s", adapter_get_path(adapter));
 
-	server = find_server(servers, adapter);
+	server = find_server(adapter);
 	if (!server)
 		return;
 
 	g_slist_free_full(server->sessions, avdtp_free);
-
-	servers = g_slist_remove(servers, server);
 
 	g_io_channel_shutdown(server->io, TRUE, NULL);
 	g_io_channel_unref(server->io);
