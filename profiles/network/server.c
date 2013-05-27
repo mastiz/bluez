@@ -114,24 +114,6 @@ static struct network_server *find_server(struct network_adapter *na,
 	return NULL;
 }
 
-static struct network_server *find_server_by_uuid(struct network_adapter *na,
-							const char *uuid)
-{
-	GSList *list;
-
-	for (list = na->servers; list; list = list->next) {
-		struct network_server *ns = list->data;
-
-		if (strcasecmp(uuid, bnep_uuid(ns->id)) == 0)
-			return ns;
-
-		if (strcasecmp(uuid, bnep_name(ns->id)) == 0)
-			return ns;
-	}
-
-	return NULL;
-}
-
 static sdp_record_t *server_record_new(const char *name, uint16_t id)
 {
 	sdp_list_t *svclass, *pfseq, *apseq, *root, *aproto;
@@ -655,7 +637,7 @@ static DBusMessage *register_server(DBusConnection *conn,
 				DBUS_TYPE_STRING, &bridge, DBUS_TYPE_INVALID))
 		return btd_error_invalid_args(msg);
 
-	ns = find_server_by_uuid(na, uuid);
+	ns = find_server(na, bnep_service_id(uuid));
 	if (ns == NULL)
 		return btd_error_failed(msg, "Invalid UUID");
 
@@ -692,7 +674,7 @@ static DBusMessage *unregister_server(DBusConnection *conn,
 							DBUS_TYPE_INVALID))
 		return btd_error_invalid_args(msg);
 
-	ns = find_server_by_uuid(na, uuid);
+	ns = find_server(na, bnep_service_id(uuid));
 	if (!ns)
 		return btd_error_failed(msg, "Invalid UUID");
 
