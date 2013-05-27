@@ -67,7 +67,7 @@ struct btd_server *server_create(struct btd_adapter *adapter,
 	server->adapter = adapter; /* Weak ref */
 	server->profile = profile;
 
-	err = profile->adapter_probe(server->profile, server->adapter);
+	err = profile->adapter_probe(server);
 	if (err == 0)
 		return server;
 
@@ -82,8 +82,7 @@ struct btd_server *server_create(struct btd_adapter *adapter,
 void server_destroy(struct btd_server *server)
 {
 	if (server->profile->adapter_remove != NULL)
-		server->profile->adapter_remove(server->profile,
-							server->adapter);
+		server->profile->adapter_remove(server);
 
 	g_free(server);
 }

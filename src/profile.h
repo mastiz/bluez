@@ -25,6 +25,7 @@
 #define BTD_PROFILE_PRIORITY_MEDIUM	1
 #define BTD_PROFILE_PRIORITY_HIGH	2
 
+struct btd_server;
 struct btd_service;
 
 struct btd_profile {
@@ -42,10 +43,8 @@ struct btd_profile {
 	int (*connect) (struct btd_service *service);
 	int (*disconnect) (struct btd_service *service);
 
-	int (*adapter_probe) (struct btd_profile *p,
-						struct btd_adapter *adapter);
-	void (*adapter_remove) (struct btd_profile *p,
-						struct btd_adapter *adapter);
+	int (*adapter_probe) (struct btd_server *server);
+	void (*adapter_remove) (struct btd_server *server);
 };
 
 void btd_profile_foreach(void (*func)(struct btd_profile *p, void *data),

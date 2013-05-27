@@ -43,6 +43,7 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
+#include "server.h"
 #include "hcid.h"
 #include "attrib/gattrib.h"
 #include "attrib/att.h"
@@ -232,8 +233,9 @@ void reporter_device_remove(struct btd_service *service)
 	unregister_reporter_device(device, radapter);
 }
 
-int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
+int reporter_adapter_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct reporter_adapter *radapter;
 
 	radapter = g_new0(struct reporter_adapter, 1);
@@ -249,9 +251,9 @@ int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
 	return 0;
 }
 
-void reporter_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+void reporter_adapter_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct reporter_adapter *radapter = find_reporter_adapter(adapter);
 	if (!radapter)
 		return;

@@ -45,6 +45,7 @@
 #include "attrib-server.h"
 #include "attrib/gatt.h"
 #include "profile.h"
+#include "server.h"
 #include "error.h"
 #include "textfile.h"
 #include "attio.h"
@@ -927,9 +928,9 @@ static void register_alert_notif_service(struct alert_adapter *al_adapter)
 			GATT_OPT_INVALID);
 }
 
-static int alert_server_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int alert_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct alert_adapter *al_adapter;
 
 	al_adapter = g_new0(struct alert_adapter, 1);
@@ -943,9 +944,9 @@ static int alert_server_probe(struct btd_profile *p,
 	return 0;
 }
 
-static void alert_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void alert_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct alert_adapter *al_adapter;
 
 	al_adapter = find_alert_adapter(adapter);

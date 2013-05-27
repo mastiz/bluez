@@ -42,6 +42,7 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
+#include "../src/server.h"
 #include "common.h"
 #include "connection.h"
 #include "server.h"
@@ -74,8 +75,9 @@ done:
 				conf_security ? "true" : "false");
 }
 
-static int panu_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
+static int panu_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);
@@ -83,9 +85,9 @@ static int panu_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
 	return server_register(adapter, BNEP_SVC_PANU);
 }
 
-static void panu_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void panu_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);
@@ -93,8 +95,9 @@ static void panu_server_remove(struct btd_profile *p,
 	server_unregister(adapter, BNEP_SVC_PANU);
 }
 
-static int gn_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
+static int gn_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);
@@ -102,9 +105,9 @@ static int gn_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
 	return server_register(adapter, BNEP_SVC_GN);
 }
 
-static void gn_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void gn_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);
@@ -112,8 +115,9 @@ static void gn_server_remove(struct btd_profile *p,
 	server_unregister(adapter, BNEP_SVC_GN);
 }
 
-static int nap_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
+static int nap_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);
@@ -121,9 +125,9 @@ static int nap_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
 	return server_register(adapter, BNEP_SVC_NAP);
 }
 
-static void nap_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void nap_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);

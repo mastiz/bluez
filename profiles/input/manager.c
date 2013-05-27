@@ -40,18 +40,22 @@
 #include "../src/device.h"
 #include "../src/profile.h"
 #include "../src/service.h"
+#include "../src/server.h"
 
 #include "device.h"
 #include "server.h"
 
-static int hid_server_probe(struct btd_profile *p, struct btd_adapter *adapter)
+static int hid_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	return server_start(adapter_get_address(adapter));
 }
 
-static void hid_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void hid_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	server_stop(adapter_get_address(adapter));
 }
 

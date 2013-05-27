@@ -39,8 +39,7 @@ enum {
 void reporter_device_remove(struct btd_service *service);
 int reporter_device_probe(struct btd_service *service);
 
-int reporter_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter);
-void reporter_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter);
+int reporter_adapter_probe(struct btd_server *server);
+void reporter_adapter_remove(struct btd_server *server);
 
 const char *get_alert_level_string(uint8_t level);

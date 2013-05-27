@@ -54,6 +54,7 @@
 #include "../src/device.h"
 #include "../src/profile.h"
 #include "../src/service.h"
+#include "../src/server.h"
 
 #include "log.h"
 #include "device.h"
@@ -272,65 +273,73 @@ static int avrcp_target_disconnect(struct btd_service *service)
 	return control_disconnect(audio_dev);
 }
 
-static int a2dp_source_server_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int a2dp_source_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	return a2dp_source_register(adapter, config);
 }
 
-static void a2dp_source_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void a2dp_source_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	a2dp_source_unregister(adapter);
 }
 
-static int a2dp_sink_server_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int a2dp_sink_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	return a2dp_sink_register(adapter, config);
 }
 
-static void a2dp_sink_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void a2dp_sink_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	a2dp_sink_unregister(adapter);
 }
 
-static int avrcp_target_server_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int avrcp_target_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	return avrcp_target_register(adapter, config);
 }
 
-static int avrcp_remote_server_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int avrcp_remote_server_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	return avrcp_remote_register(adapter, config);
 }
 
-static void avrcp_target_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void avrcp_target_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	avrcp_target_unregister(adapter);
 }
 
-static void avrcp_remote_server_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void avrcp_remote_server_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	DBG("path %s", adapter_get_path(adapter));
 
 	avrcp_remote_unregister(adapter);

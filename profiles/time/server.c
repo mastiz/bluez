@@ -34,6 +34,7 @@
 #include <adapter.h>
 #include <device.h>
 #include <profile.h>
+#include <server.h>
 #include <plugin.h>
 
 #include "lib/uuid.h"
@@ -230,8 +231,9 @@ static gboolean register_ref_time_update_service(struct btd_adapter *adapter)
 				GATT_OPT_INVALID);
 }
 
-static int time_server_init(struct btd_profile *p, struct btd_adapter *adapter)
+static int time_server_init(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);
@@ -249,9 +251,9 @@ static int time_server_init(struct btd_profile *p, struct btd_adapter *adapter)
 	return 0;
 }
 
-static void time_server_exit(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void time_server_exit(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	const char *path = adapter_get_path(adapter);
 
 	DBG("path %s", path);

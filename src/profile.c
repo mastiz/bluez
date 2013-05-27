@@ -51,6 +51,7 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
+#include "server.h"
 
 #define DUN_DEFAULT_CHANNEL	1
 #define SPP_DEFAULT_CHANNEL	3
@@ -1347,9 +1348,10 @@ static struct ext_profile *find_ext(struct btd_profile *p)
 	return l->data;
 }
 
-static int ext_adapter_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int ext_adapter_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+	struct btd_profile *p = btd_server_get_profile(server);
 	struct ext_profile *ext;
 	struct ext_record *rec;
 	uint32_t handle;
@@ -1394,9 +1396,10 @@ static void ext_remove_records(struct ext_profile *ext,
 	}
 }
 
-static void ext_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void ext_adapter_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+	struct btd_profile *p = btd_server_get_profile(server);
 	struct ext_profile *ext;
 	GSList *l, *next;
 

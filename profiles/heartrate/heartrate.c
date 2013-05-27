@@ -36,6 +36,7 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
+#include "server.h"
 #include "error.h"
 #include "attrib/gattrib.h"
 #include "attrib/att.h"
@@ -830,15 +831,17 @@ static void heartrate_device_unregister(struct btd_device *device)
 				device_get_path(device), HEART_RATE_INTERFACE);
 }
 
-static int heartrate_adapter_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int heartrate_adapter_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	return heartrate_adapter_register(adapter);
 }
 
-static void heartrate_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void heartrate_adapter_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	heartrate_adapter_unregister(adapter);
 }
 

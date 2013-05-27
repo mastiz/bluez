@@ -35,6 +35,7 @@
 #include <device.h>
 #include <profile.h>
 #include <service.h>
+#include <server.h>
 #include <glib-helper.h>
 #include <log.h>
 
@@ -43,15 +44,17 @@
 #include "hdp_manager.h"
 #include "hdp.h"
 
-static int hdp_adapter_probe(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static int hdp_adapter_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	return hdp_adapter_register(adapter);
 }
 
-static void hdp_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void hdp_adapter_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
 	hdp_adapter_unregister(adapter);
 }
 

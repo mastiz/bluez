@@ -35,6 +35,7 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
+#include "server.h"
 #include "dbus-common.h"
 #include "error.h"
 #include "attrib/gattrib.h"
@@ -957,8 +958,9 @@ static const GDBusMethodTable cyclingspeed_manager_methods[] = {
 	{ }
 };
 
-static int csc_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
+static int csc_adapter_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct csc_adapter *cadapter;
 
 	cadapter = g_new0(struct csc_adapter, 1);
@@ -981,9 +983,9 @@ static int csc_adapter_probe(struct btd_profile *p, struct btd_adapter *adapter)
 	return 0;
 }
 
-static void csc_adapter_remove(struct btd_profile *p,
-						struct btd_adapter *adapter)
+static void csc_adapter_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct csc_adapter *cadapter;
 
 	cadapter = find_csc_adapter(adapter);
