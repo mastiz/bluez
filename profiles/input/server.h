@@ -21,5 +21,5 @@
  *
  */
 
-int server_start(const bdaddr_t *src);
-void server_stop(const bdaddr_t *src);
+int hid_server_probe(struct btd_server *btd_server);
+void hid_server_remove(struct btd_server *btd_server);

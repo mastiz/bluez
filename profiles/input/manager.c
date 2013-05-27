@@ -45,20 +45,6 @@
 #include "device.h"
 #include "server.h"
 
-static int hid_server_probe(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-
-	return server_start(adapter_get_address(adapter));
-}
-
-static void hid_server_remove(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-
-	server_stop(adapter_get_address(adapter));
-}
-
 static struct btd_profile input_profile = {
 	.name		= "input-hid",
 	.local_uuid	= HID_UUID,

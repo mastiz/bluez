@@ -43,6 +43,7 @@
 #include "../src/adapter.h"
 #include "../src/device.h"
 #include "../src/profile.h"
+#include "../src/server.h"
 
 #include "device.h"
 #include "server.h"
@@ -193,8 +194,10 @@ drop:
 	g_io_channel_shutdown(chan, TRUE, NULL);
 }
 
-int server_start(const bdaddr_t *src)
+int hid_server_probe(struct btd_server *btd_server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+	const bdaddr_t *src = adapter_get_address(adapter);
 	struct input_server *server;
 	GError *err = NULL;
 
@@ -233,8 +236,10 @@ int server_start(const bdaddr_t *src)
 	return 0;
 }
 
-void server_stop(const bdaddr_t *src)
+void hid_server_remove(struct btd_server *btd_server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+	const bdaddr_t *src = adapter_get_address(adapter);
 	struct input_server *server;
 	GSList *l;
 
