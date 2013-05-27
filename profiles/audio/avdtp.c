@@ -3863,15 +3863,9 @@ struct btd_device *avdtp_get_device(struct avdtp *session)
 static int avdtp_server_probe(struct btd_server *btd_server)
 {
 	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+	struct avdtp_server *server;
 
 	DBG("path %s", adapter_get_path(adapter));
-
-	return 0;
-}
-
-int avdtp_init(struct btd_adapter *adapter)
-{
-	struct avdtp_server *server;
 
 	server = g_new0(struct avdtp_server, 1);
 
@@ -3891,13 +3885,9 @@ int avdtp_init(struct btd_adapter *adapter)
 static void avdtp_server_remove(struct btd_server *btd_server)
 {
 	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+	struct avdtp_server *server;
 
 	DBG("path %s", adapter_get_path(adapter));
-}
-
-void avdtp_exit(struct btd_adapter *adapter)
-{
-	struct avdtp_server *server;
 
 	server = find_server(servers, adapter);
 	if (!server)
