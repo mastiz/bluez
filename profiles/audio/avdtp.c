@@ -49,6 +49,8 @@
 #include "lib/uuid.h"
 #include "../src/adapter.h"
 #include "../src/device.h"
+#include "../src/profile.h"
+#include "../src/server.h"
 
 #include "device.h"
 #include "manager.h"
@@ -3858,6 +3860,15 @@ struct btd_device *avdtp_get_device(struct avdtp *session)
 	return session->device;
 }
 
+static int avdtp_server_probe(struct btd_server *btd_server)
+{
+	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+
+	DBG("path %s", adapter_get_path(adapter));
+
+	return 0;
+}
+
 int avdtp_init(struct btd_adapter *adapter)
 {
 	struct avdtp_server *server;
@@ -3875,6 +3886,13 @@ int avdtp_init(struct btd_adapter *adapter)
 	servers = g_slist_append(servers, server);
 
 	return 0;
+}
+
+static void avdtp_server_remove(struct btd_server *btd_server)
+{
+	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+
+	DBG("path %s", adapter_get_path(adapter));
 }
 
 void avdtp_exit(struct btd_adapter *adapter)
@@ -3942,13 +3960,47 @@ gboolean avdtp_remove_state_cb(unsigned int id)
 	return FALSE;
 }
 
+static int avdtp_device_probe(struct btd_service *service)
+{
+	return 0;
+}
+
+static void avdtp_device_remove(struct btd_service *service)
+{
+}
+
+static int avdtp_connect(struct btd_service *service)
+{
+	return -ENOTSUP;
+}
+
+static int avdtp_disconnect(struct btd_service *service)
+{
+	return -ENOTSUP;
+}
+
+static struct btd_profile avdtp_profile = {
+	.name		= "audio-avdtp",
+
+	.local_uuid	= AVDTP_UUID_STR,
+	.remote_uuid	= AVDTP_UUID_STR,
+	.device_probe	= avdtp_device_probe,
+	.device_remove	= avdtp_device_remove,
+
+	.connect	= avdtp_connect,
+	.disconnect	= avdtp_disconnect,
+
+	.adapter_probe	= avdtp_server_probe,
+	.adapter_remove	= avdtp_server_remove,
+};
+
 int avdtp_server_init(GKeyFile *config)
 {
 	GError *err = NULL;
 	gboolean tmp;
 
 	if (config == NULL)
-		return 0;
+		goto proceed;
 
 	tmp = g_key_file_get_boolean(config, "General", "Master", &err);
 
@@ -3958,9 +4010,11 @@ int avdtp_server_init(GKeyFile *config)
 	} else
 		master = tmp;
 
-	return 0;
+proceed:
+	return btd_profile_register(&avdtp_profile);
 }
 
 void avdtp_server_exit(void)
 {
+	btd_profile_unregister(&avdtp_profile);
 }
