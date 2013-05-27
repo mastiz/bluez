@@ -555,17 +555,6 @@ drop:
 	g_io_channel_shutdown(chan, TRUE, NULL);
 }
 
-int server_init(gboolean secure)
-{
-	security = secure;
-
-	return 0;
-}
-
-void server_exit(void)
-{
-}
-
 static uint32_t register_server_record(struct network_server *ns)
 {
 	sdp_record_t *record;
@@ -854,4 +843,40 @@ void network_server_remove(struct btd_server *server)
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 						adapter_get_path(adapter),
 						NETWORK_SERVER_INTERFACE);
+}
+
+static int bnep_server_probe(struct btd_server *server)
+{
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+	const char *path = adapter_get_path(adapter);
+
+	DBG("path %s", path);
+
+	return 0;
+}
+
+static void bnep_server_remove(struct btd_server *server)
+{
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+
+	DBG("path %s", adapter_get_path(adapter));
+}
+
+static struct btd_profile bnep_profile = {
+	.name		= "network-bnep",
+	.local_uuid	= BNEP_SVC_UUID,
+	.adapter_probe	= bnep_server_probe,
+	.adapter_remove	= bnep_server_remove,
+};
+
+int network_server_init(gboolean secure)
+{
+	security = secure;
+
+	return btd_profile_register(&bnep_profile);
+}
+
+void network_server_exit(void)
+{
+	btd_profile_unregister(&bnep_profile);
 }

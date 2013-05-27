@@ -127,7 +127,7 @@ static int network_init(void)
 	 * field that defines which service the source is connecting to.
 	 */
 
-	if (server_init(conf_security) < 0)
+	if (network_server_init(conf_security) < 0)
 		return -1;
 
 	btd_profile_register(&panu_profile);
@@ -139,11 +139,11 @@ static int network_init(void)
 
 static void network_exit(void)
 {
-	server_exit();
-
 	btd_profile_unregister(&panu_profile);
 	btd_profile_unregister(&gn_profile);
 	btd_profile_unregister(&nap_profile);
+
+	network_server_exit();
 
 	bnep_cleanup();
 }

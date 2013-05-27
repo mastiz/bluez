@@ -21,7 +21,7 @@
  *
  */
 
-int server_init(gboolean secure);
-void server_exit(void);
+int network_server_init(gboolean secure);
+void network_server_exit(void);
 int network_server_probe(struct btd_server *server);
 void network_server_remove(struct btd_server *server);
