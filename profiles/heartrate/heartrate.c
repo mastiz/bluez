@@ -724,8 +724,9 @@ static const GDBusPropertyTable heartrate_device_properties[] = {
 	{ }
 };
 
-static int heartrate_adapter_register(struct btd_adapter *adapter)
+static int heartrate_adapter_probe(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct heartrate_adapter *hradapter;
 
 	hradapter = g_new0(struct heartrate_adapter, 1);
@@ -748,8 +749,9 @@ static int heartrate_adapter_register(struct btd_adapter *adapter)
 	return 0;
 }
 
-static void heartrate_adapter_unregister(struct btd_adapter *adapter)
+static void heartrate_adapter_remove(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct heartrate_adapter *hradapter;
 
 	hradapter = find_heartrate_adapter(adapter);
@@ -829,20 +831,6 @@ static void heartrate_device_unregister(struct btd_device *device)
 
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 				device_get_path(device), HEART_RATE_INTERFACE);
-}
-
-static int heartrate_adapter_probe(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-
-	return heartrate_adapter_register(adapter);
-}
-
-static void heartrate_adapter_remove(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-
-	heartrate_adapter_unregister(adapter);
 }
 
 static int heartrate_device_probe(struct btd_service *service)
