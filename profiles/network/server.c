@@ -43,7 +43,9 @@
 #include "lib/uuid.h"
 #include "../src/dbus-common.h"
 #include "../src/adapter.h"
+#include "../src/device.h"
 #include "../src/profile.h"
+#include "../src/service.h"
 #include "../src/server.h"
 
 #include "log.h"
@@ -66,7 +68,6 @@ struct network_session {
 
 struct network_adapter {
 	struct btd_adapter *adapter;	/* Adapter pointer */
-	GIOChannel	*io;		/* Bnep socket */
 	struct network_session *setup;	/* Setup in progress */
 };
 
@@ -367,14 +368,6 @@ static gboolean bnep_setup(GIOChannel *chan,
 	uint16_t src_role, dst_role, rsp = BNEP_CONN_NOT_ALLOWED;
 	int n, sk;
 
-	if (cond & G_IO_NVAL)
-		return FALSE;
-
-	if (cond & (G_IO_ERR | G_IO_HUP)) {
-		error("Hangup or error on BNEP socket");
-		return FALSE;
-	}
-
 	sk = g_io_channel_unix_get_fd(chan);
 
 	/* Reading BNEP_SETUP_CONNECTION_REQUEST_MSG */
@@ -441,100 +434,47 @@ reply:
 	return FALSE;
 }
 
-static void connect_event(GIOChannel *chan, GError *err, gpointer user_data)
+static int accept_cb(struct btd_connection *conn)
 {
-	struct network_adapter *na = user_data;
-
-	if (err) {
-		error("%s", err->message);
-		setup_destroy(na);
-		return;
-	}
-
-	g_io_channel_set_close_on_unref(chan, TRUE);
-
-	na->setup->watch = g_io_add_watch_full(chan, G_PRIORITY_DEFAULT,
-				G_IO_IN | G_IO_HUP | G_IO_ERR | G_IO_NVAL,
-				bnep_setup, na, setup_destroy);
-}
-
-static void auth_cb(DBusError *derr, void *user_data)
-{
-	struct network_adapter *na = user_data;
-	GError *err = NULL;
-
-	if (derr) {
-		error("Access denied: %s", derr->message);
-		goto reject;
-	}
-
-	if (!bt_io_accept(na->setup->io, connect_event, na, NULL,
-							&err)) {
-		error("bt_io_accept: %s", err->message);
-		g_error_free(err);
-		goto reject;
-	}
-
-	return;
-
-reject:
-	g_io_channel_shutdown(na->setup->io, TRUE, NULL);
-	setup_destroy(na);
-}
-
-static void confirm_event(GIOChannel *chan, gpointer user_data)
-{
-	struct network_adapter *na = user_data;
-	struct network_server *ns;
-	bdaddr_t src, dst;
+	struct btd_server *server = btd_connection_get_server(conn);
+	struct network_server *ns = btd_server_get_user_data(server);
+	struct network_adapter *na = ns->na;
+	GIOChannel *chan = btd_connection_get_io(conn);
 	char address[18];
-	GError *err = NULL;
-	guint ret;
-
-	bt_io_get(chan, &err,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_DEST, address,
-			BT_IO_OPT_INVALID);
-	if (err) {
-		error("%s", err->message);
-		g_error_free(err);
-		goto drop;
-	}
-
-	DBG("BNEP: incoming connect from %s", address);
 
 	if (na->setup) {
 		error("Refusing connect from %s: setup in progress", address);
-		goto drop;
+		return -EBUSY;
 	}
 
 	ns = find_server(na, BNEP_SVC_NAP);
 	if (!ns)
-		goto drop;
+		return -EIO;
 
 	if (!ns->record_id)
-		goto drop;
+		return -EIO;
 
 	if (!ns->bridge)
-		goto drop;
+		return -EIO;
 
 	na->setup = g_new0(struct network_session, 1);
-	bacpy(&na->setup->dst, &dst);
+	bacpy(&na->setup->dst, btd_connection_get_dst(conn));
 	na->setup->io = g_io_channel_ref(chan);
 
-	ret = btd_request_authorization(&src, &dst, BNEP_SVC_UUID,
-					auth_cb, na);
-	if (ret == 0) {
-		error("Refusing connect from %s", address);
-		setup_destroy(na);
-		goto drop;
-	}
+	na->setup->watch = g_io_add_watch_full(chan, G_PRIORITY_DEFAULT,
+				G_IO_IN,
+				bnep_setup, na, setup_destroy);
 
-	return;
+	return 0;
+}
 
-drop:
-	g_io_channel_shutdown(chan, TRUE, NULL);
+static void disconnect_cb(struct btd_connection *conn)
+{
+	struct btd_server *server = btd_connection_get_server(conn);
+	struct network_server *ns = btd_server_get_user_data(server);
+	struct network_adapter *na = ns->na;
+
+	setup_destroy(na);
 }
 
 static uint32_t register_server_record(struct network_server *ns)
@@ -662,11 +602,6 @@ static DBusMessage *unregister_server(DBusConnection *conn,
 
 static void adapter_free(struct network_adapter *na)
 {
-	if (na->io != NULL) {
-		g_io_channel_shutdown(na->io, TRUE, NULL);
-		g_io_channel_unref(na->io);
-	}
-
 	setup_destroy(na);
 	btd_adapter_unref(na->adapter);
 	g_free(na);
@@ -708,30 +643,22 @@ static const GDBusMethodTable server_methods[] = {
 	{ }
 };
 
-static struct network_adapter *create_adapter(struct btd_adapter *adapter)
+static struct network_adapter *create_adapter(struct btd_server *server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct network_adapter *na;
-	GError *err = NULL;
 
-	na = g_new0(struct network_adapter, 1);
-	na->adapter = btd_adapter_ref(adapter);
-
-	na->io = bt_io_listen(NULL, confirm_event, na,
-				NULL, &err,
-				BT_IO_OPT_SOURCE_BDADDR,
-				adapter_get_address(adapter),
+	if (btd_server_listen(server, true, accept_cb, disconnect_cb,
 				BT_IO_OPT_PSM, BNEP_PSM,
 				BT_IO_OPT_OMTU, BNEP_MTU,
 				BT_IO_OPT_IMTU, BNEP_MTU,
 				BT_IO_OPT_SEC_LEVEL,
 				security ? BT_IO_SEC_MEDIUM : BT_IO_SEC_LOW,
-				BT_IO_OPT_INVALID);
-	if (!na->io) {
-		error("%s", err->message);
-		g_error_free(err);
-		adapter_free(na);
+				BT_IO_OPT_INVALID) == NULL)
 		return NULL;
-	}
+
+	na = g_new0(struct network_adapter, 1);
+	na->adapter = btd_adapter_ref(adapter);
 
 	return na;
 }
@@ -780,7 +707,7 @@ static int bnep_server_probe(struct btd_server *server)
 
 	DBG("path %s", path);
 
-	na = create_adapter(adapter);
+	na = create_adapter(server);
 	if (na == NULL)
 		return -EINVAL;
 
