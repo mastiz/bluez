@@ -43,49 +43,23 @@
 #include "../src/adapter.h"
 #include "../src/device.h"
 #include "../src/profile.h"
+#include "../src/service.h"
 #include "../src/server.h"
 
 #include "device.h"
 #include "server.h"
 
-struct input_server {
-	bdaddr_t src;
-	GIOChannel *ctrl;
-	GIOChannel *intr;
-	GIOChannel *confirm;
-};
-
-static void connect_event_cb(GIOChannel *chan, GError *err, gpointer data)
+static int hid_accept_cb(struct btd_connection *conn)
 {
-	uint16_t psm;
-	bdaddr_t src, dst;
-	char address[18];
-	GError *gerr = NULL;
+	const bdaddr_t *src = btd_connection_get_src(conn);
+	const bdaddr_t *dst = btd_connection_get_dst(conn);
+	uint16_t psm = btd_connection_get_psm(conn);
+	GIOChannel *chan = btd_connection_get_io(conn);
 	int ret;
 
-	if (err) {
-		error("%s", err->message);
-		return;
-	}
-
-	bt_io_get(chan, &gerr,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_PSM, &psm,
-			BT_IO_OPT_INVALID);
-	if (gerr) {
-		error("%s", gerr->message);
-		g_error_free(gerr);
-		g_io_channel_shutdown(chan, TRUE, NULL);
-		return;
-	}
-
-	ba2str(&dst, address);
-	DBG("Incoming connection from %s on PSM %d", address, psm);
-
-	ret = input_device_set_channel(&src, &dst, psm, chan);
+	ret = input_device_set_channel(src, dst, psm, chan);
 	if (ret == 0)
-		return;
+		return 0;
 
 	error("Refusing input device connect: %s (%d)", strerror(-ret), -ret);
 
@@ -97,145 +71,38 @@ static void connect_event_cb(GIOChannel *chan, GError *err, gpointer data)
 			error("Unable to send virtual cable unplug");
 	}
 
-	g_io_channel_shutdown(chan, TRUE, NULL);
+	return -EIO;
 }
 
-static void auth_callback(DBusError *derr, void *user_data)
+static void hid_disconn_cb(struct btd_connection *conn)
 {
-	struct input_server *server = user_data;
-	bdaddr_t src, dst;
-	GError *err = NULL;
+	const bdaddr_t *src = btd_connection_get_src(conn);
+	const bdaddr_t *dst = btd_connection_get_dst(conn);
 
-	bt_io_get(server->confirm, &err,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_INVALID);
-	if (err) {
-		error("%s", err->message);
-		g_error_free(err);
-		goto reject;
-	}
-
-	if (derr) {
-		error("Access denied: %s", derr->message);
-		goto reject;
-	}
-
-	if (!bt_io_accept(server->confirm, connect_event_cb, server,
-				NULL, &err)) {
-		error("bt_io_accept: %s", err->message);
-		g_error_free(err);
-		goto reject;
-	}
-
-	g_io_channel_unref(server->confirm);
-	server->confirm = NULL;
-
-	return;
-
-reject:
-	g_io_channel_shutdown(server->confirm, TRUE, NULL);
-	g_io_channel_unref(server->confirm);
-	server->confirm = NULL;
-	input_device_close_channels(&src, &dst);
-}
-
-static void confirm_event_cb(GIOChannel *chan, gpointer user_data)
-{
-	struct input_server *server = user_data;
-	bdaddr_t src, dst;
-	GError *err = NULL;
-	char addr[18];
-	guint ret;
-
-	bt_io_get(chan, &err,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_INVALID);
-	if (err) {
-		error("%s", err->message);
-		g_error_free(err);
-		goto drop;
-	}
-
-	if (server->confirm) {
-		char address[18];
-
-		ba2str(&dst, address);
-		error("Refusing connection from %s: setup in progress",
-								address);
-		goto drop;
-	}
-
-	server->confirm = g_io_channel_ref(chan);
-
-	ret = btd_request_authorization(&src, &dst, HID_UUID,
-					auth_callback, server);
-	if (ret != 0)
-		return;
-
-	ba2str(&src, addr);
-	error("input: authorization for %s failed", addr);
-
-	g_io_channel_unref(server->confirm);
-	server->confirm = NULL;
-
-drop:
-	input_device_close_channels(&src, &dst);
-	g_io_channel_shutdown(chan, TRUE, NULL);
+	input_device_close_channels(src, dst);
 }
 
 int hid_server_probe(struct btd_server *btd_server)
 {
-	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
-	const bdaddr_t *src = adapter_get_address(adapter);
-	struct input_server *server;
-	GError *err = NULL;
-
-	server = g_new0(struct input_server, 1);
-	bacpy(&server->src, src);
-
-	server->ctrl = bt_io_listen(connect_event_cb, NULL,
-				server, NULL, &err,
-				BT_IO_OPT_SOURCE_BDADDR, src,
+	if (btd_server_listen(btd_server, false, hid_accept_cb, hid_disconn_cb,
 				BT_IO_OPT_PSM, L2CAP_PSM_HIDP_CTRL,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
-				BT_IO_OPT_INVALID);
-	if (!server->ctrl) {
+				BT_IO_OPT_INVALID) == NULL) {
 		error("Failed to listen on control channel");
-		g_error_free(err);
-		g_free(server);
 		return -1;
 	}
 
-	server->intr = bt_io_listen(NULL, confirm_event_cb,
-				server, NULL, &err,
-				BT_IO_OPT_SOURCE_BDADDR, src,
+	if (btd_server_listen(btd_server, true, hid_accept_cb, hid_disconn_cb,
 				BT_IO_OPT_PSM, L2CAP_PSM_HIDP_INTR,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_LOW,
-				BT_IO_OPT_INVALID);
-	if (!server->intr) {
+				BT_IO_OPT_INVALID) == NULL) {
 		error("Failed to listen on interrupt channel");
-		g_io_channel_unref(server->ctrl);
-		g_error_free(err);
-		g_free(server);
 		return -1;
 	}
-
-	btd_server_set_user_data(btd_server, server);
 
 	return 0;
 }
 
 void hid_server_remove(struct btd_server *btd_server)
 {
-	struct input_server *server = btd_server_get_user_data(btd_server);
-
-	g_io_channel_shutdown(server->intr, TRUE, NULL);
-	g_io_channel_unref(server->intr);
-
-	g_io_channel_shutdown(server->ctrl, TRUE, NULL);
-	g_io_channel_unref(server->ctrl);
-
-	g_free(server);
 }
