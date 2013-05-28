@@ -748,12 +748,8 @@ static gboolean sco_set(int sock, uint16_t mtu, GError **err)
 	return TRUE;
 }
 
-static gboolean parse_set_opts(struct set_opts *opts, GError **err,
-						BtIOOption opt1, va_list args)
+static void reset_set_opts(struct set_opts *opts)
 {
-	BtIOOption opt = opt1;
-	const char *str;
-
 	memset(opts, 0, sizeof(*opts));
 
 	/* Set defaults */
@@ -765,6 +761,14 @@ static gboolean parse_set_opts(struct set_opts *opts, GError **err,
 	opts->priority = 0;
 	opts->src_type = BDADDR_BREDR;
 	opts->dst_type = BDADDR_BREDR;
+}
+
+static gboolean parse_set_opts(struct set_opts *opts, GError **err,
+						BtIOOption opt1, va_list args)
+
+{
+	BtIOOption opt = opt1;
+	const char *str;
 
 	while (opt != BT_IO_OPT_INVALID) {
 		switch (opt) {
@@ -1290,6 +1294,7 @@ gboolean bt_io_set(GIOChannel *io, GError **err, BtIOOption opt1, ...)
 	BtIOType type;
 
 	va_start(args, opt1);
+	reset_set_opts(&opts);
 	ret = parse_set_opts(&opts, err, opt1, args);
 	va_end(args);
 
@@ -1410,6 +1415,7 @@ GIOChannel *bt_io_connect(BtIOConnect connect, gpointer user_data,
 	gboolean ret;
 
 	va_start(args, opt1);
+	reset_set_opts(&opts);
 	ret = parse_set_opts(&opts, gerr, opt1, args);
 	va_end(args);
 
@@ -1461,6 +1467,7 @@ GIOChannel *bt_io_listen(BtIOConnect connect, BtIOConfirm confirm,
 	gboolean ret;
 
 	va_start(args, opt1);
+	reset_set_opts(&opts);
 	ret = parse_set_opts(&opts, err, opt1, args);
 	va_end(args);
 
