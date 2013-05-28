@@ -556,8 +556,8 @@ struct ext_profile {
 	char *role;
 
 	char *record;
-	char *(*get_record)(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm);
+	char *(*get_record)(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm);
 
 	char *remote_uuid;
 
@@ -579,7 +579,6 @@ struct ext_profile {
 	uint16_t features;
 
 	GSList *records;
-	GSList *servers;
 	GSList *conns;
 
 	GSList *connects;
@@ -587,7 +586,6 @@ struct ext_profile {
 
 struct ext_io {
 	struct ext_profile *ext;
-	int proto;
 	GIOChannel *io;
 	guint io_id;
 	struct btd_adapter *adapter;
@@ -603,8 +601,6 @@ struct ext_io {
 	uint16_t psm;
 	uint8_t chan;
 
-	guint auth_id;
-	unsigned int svc_id;
 	DBusPendingCall *pending;
 };
 
@@ -700,13 +696,6 @@ static void ext_io_destroy(gpointer p)
 		g_io_channel_shutdown(ext_io->io, FALSE, NULL);
 		g_io_channel_unref(ext_io->io);
 	}
-
-	if (ext_io->auth_id != 0)
-		btd_cancel_authorization(ext_io->auth_id);
-
-	if (ext_io->svc_id != 0)
-		device_remove_svc_complete_callback(ext_io->device,
-							ext_io->svc_id);
 
 	if (ext_io->pending) {
 		dbus_pending_call_cancel(ext_io->pending);
@@ -998,205 +987,46 @@ drop:
 	ext_io_destroy(conn);
 }
 
-static void ext_auth(DBusError *err, void *user_data)
+static int ext_accept_cb(struct btd_connection *btd_conn)
 {
-	struct ext_io *conn = user_data;
-	struct ext_profile *ext = conn->ext;
-	GError *gerr = NULL;
-	char addr[18];
-
-	conn->auth_id = 0;
-
-	bt_io_get(conn->io, &gerr, BT_IO_OPT_DEST, addr, BT_IO_OPT_INVALID);
-	if (gerr != NULL) {
-		error("Unable to get connect data for %s: %s",
-						ext->name, err->message);
-		g_error_free(gerr);
-		goto drop;
-	}
-
-	if (err && dbus_error_is_set(err)) {
-		error("%s rejected %s: %s", ext->name, addr, err->message);
-		goto drop;
-	}
-
-	if (conn->svc_id > 0) {
-		DBG("Connection from %s authorized but still waiting for SDP",
-									addr);
-		return;
-	}
-
-	if (!bt_io_accept(conn->io, ext_connect, conn, NULL, &gerr)) {
-		error("bt_io_accept: %s", gerr->message);
-		g_error_free(gerr);
-		goto drop;
-	}
-
-	DBG("%s authorized to connect to %s", addr, ext->name);
-
-	return;
-
-drop:
-	ext->conns = g_slist_remove(ext->conns, conn);
-	ext_io_destroy(conn);
-}
-
-static struct ext_io *create_conn(struct ext_io *server, GIOChannel *io,
-						bdaddr_t *src, bdaddr_t *dst)
-{
-	struct btd_device *device;
-	struct btd_service *service;
+	struct btd_server *server = btd_connection_get_server(btd_conn);
 	struct ext_io *conn;
-	GIOCondition cond;
-	char addr[18];
-
-	device = adapter_find_device(server->adapter, dst);
-	if (device == NULL) {
-		ba2str(dst, addr);
-		error("%s device %s not found", server->ext->name, addr);
-		return NULL;
-	}
-
-	btd_device_add_uuid(device, server->ext->remote_uuid);
-	service = btd_device_get_service(device, server->ext->remote_uuid);
-	if (service == NULL) {
-		ba2str(dst, addr);
-		error("%s service not found for device %s", server->ext->name,
-									addr);
-		return NULL;
-	}
 
 	conn = g_new0(struct ext_io, 1);
-	conn->io = g_io_channel_ref(io);
-	conn->proto = server->proto;
-	conn->ext = server->ext;
-	conn->adapter = btd_adapter_ref(server->adapter);
-	conn->device = btd_device_ref(device);
-	conn->service = btd_service_ref(service);
+	conn->io = g_io_channel_ref(btd_connection_get_io(btd_conn));
+	conn->ext = btd_server_get_user_data(server);
+	conn->service = btd_service_ref(btd_connection_get_service(btd_conn));
+	conn->device = btd_device_ref(btd_service_get_device(conn->service));
+	conn->adapter = btd_adapter_ref(device_get_adapter(conn->device));
 
-	cond = G_IO_HUP | G_IO_ERR | G_IO_NVAL;
-	conn->io_id = g_io_add_watch(io, cond, ext_io_disconnected, conn);
+	if (!send_new_connection(conn->ext, conn)) {
+		ext_io_destroy(conn);
+		return -EIO;
+	}
 
-	return conn;
+	conn->ext->conns = g_slist_append(conn->ext->conns, conn);
+	btd_connection_set_user_data(btd_conn, conn);
+
+	btd_service_connecting_complete(conn->service, 0);
+
+	return 0;
 }
 
-static void ext_svc_complete(struct btd_device *dev, int err, void *user_data)
+static void ext_disconnect_cb(struct btd_connection *btd_conn)
 {
-	struct ext_io *conn = user_data;
-	struct ext_profile *ext = conn->ext;
-	const bdaddr_t *bdaddr;
-	GError *gerr = NULL;
-	char addr[18];
+	struct btd_service *service = btd_connection_get_service(btd_conn);
+	struct btd_server *server = btd_connection_get_server(btd_conn);
+	struct ext_profile *ext = btd_server_get_user_data(server);
+	struct ext_io *conn = btd_connection_get_user_data(btd_conn);
 
-	conn->svc_id = 0;
-
-	bdaddr = device_get_address(dev);
-	ba2str(bdaddr, addr);
-
-	if (err < 0) {
-		error("Service resolving failed for %s: %s (%d)",
-						addr, strerror(-err), -err);
-		goto drop;
-	}
-
-	DBG("Services resolved for %s", addr);
-
-	if (conn->auth_id > 0) {
-		DBG("Services resolved but still waiting for authorization");
-		return;
-	}
-
-	if (!bt_io_accept(conn->io, ext_connect, conn, NULL, &gerr)) {
-		error("bt_io_accept: %s", gerr->message);
-		g_error_free(gerr);
-		goto drop;
-	}
-
-	DBG("%s authorized to connect to %s", addr, ext->name);
-
-	return;
-
-drop:
 	ext->conns = g_slist_remove(ext->conns, conn);
 	ext_io_destroy(conn);
+
+	btd_service_disconnecting_complete(service, 0);
 }
 
-static void ext_confirm(GIOChannel *io, gpointer user_data)
-{
-	struct ext_io *server = user_data;
-	struct ext_profile *ext = server->ext;
-	const char *uuid = ext->service ? ext->service : ext->uuid;
-	struct ext_io *conn;
-	GError *gerr = NULL;
-	bdaddr_t src, dst;
-	char addr[18];
-
-	bt_io_get(io, &gerr,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_DEST, addr,
-			BT_IO_OPT_INVALID);
-	if (gerr != NULL) {
-		error("%s failed to get connect data: %s", ext->name,
-								gerr->message);
-		g_error_free(gerr);
-		return;
-	}
-
-	DBG("incoming connect from %s", addr);
-
-	conn = create_conn(server, io, &src, &dst);
-	if (conn == NULL)
-		return;
-
-	conn->auth_id = btd_request_authorization(&src, &dst, uuid, ext_auth,
-									conn);
-	if (conn->auth_id == 0) {
-		error("%s authorization failure", ext->name);
-		ext_io_destroy(conn);
-		return;
-	}
-
-	ext->conns = g_slist_append(ext->conns, conn);
-
-	conn->svc_id = device_wait_for_svc_complete(conn->device,
-							ext_svc_complete,
-							conn);
-
-	DBG("%s authorizing connection from %s", ext->name, addr);
-}
-
-static void ext_direct_connect(GIOChannel *io, GError *err, gpointer user_data)
-{
-	struct ext_io *server = user_data;
-	struct ext_profile *ext = server->ext;
-	GError *gerr = NULL;
-	struct ext_io *conn;
-	bdaddr_t src, dst;
-
-	bt_io_get(io, &gerr,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_INVALID);
-	if (gerr != NULL) {
-		error("%s failed to get connect data: %s", ext->name,
-								gerr->message);
-		g_error_free(gerr);
-		return;
-	}
-
-	conn = create_conn(server, io, &src, &dst);
-	if (conn == NULL)
-		return;
-
-	ext->conns = g_slist_append(ext->conns, conn);
-
-	ext_connect(io, err, conn);
-}
-
-static uint32_t ext_register_record(struct ext_profile *ext,
-							struct ext_io *l2cap,
-							struct ext_io *rfcomm,
+static uint32_t ext_register_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm,
 							const bdaddr_t *src)
 {
 	sdp_record_t *rec;
@@ -1230,22 +1060,11 @@ static uint32_t ext_register_record(struct ext_profile *ext,
 }
 
 static uint32_t ext_start_servers(struct ext_profile *ext,
-						struct btd_adapter *adapter)
+						struct btd_server *server)
 {
-	struct ext_io *l2cap = NULL;
-	struct ext_io *rfcomm = NULL;
-	BtIOConfirm confirm;
-	BtIOConnect connect;
-	GError *err = NULL;
-	GIOChannel *io;
-
-	if (ext->authorize) {
-		confirm = ext_confirm;
-		connect = NULL;
-	} else {
-		confirm = NULL;
-		connect = ext_direct_connect;
-	}
+	struct btd_adapter *adapter = btd_server_get_adapter(server);
+	GIOChannel *l2cap = NULL;
+	GIOChannel *rfcomm = NULL;
 
 	if (ext->local_psm) {
 		uint16_t psm;
@@ -1255,33 +1074,13 @@ static uint32_t ext_start_servers(struct ext_profile *ext,
 		else
 			psm = 0;
 
-		l2cap = g_new0(struct ext_io, 1);
-		l2cap->ext = ext;
-
-		io = bt_io_listen(connect, confirm, l2cap, NULL, &err,
-					BT_IO_OPT_SOURCE_BDADDR,
-					adapter_get_address(adapter),
+		l2cap = btd_server_listen(server, ext->authorize,
+					ext_accept_cb, ext_disconnect_cb,
 					BT_IO_OPT_PSM, psm,
 					BT_IO_OPT_SEC_LEVEL, ext->sec_level,
 					BT_IO_OPT_INVALID);
-		if (err != NULL) {
-			error("L2CAP server failed for %s: %s",
-						ext->name, err->message);
-			g_free(l2cap);
-			l2cap = NULL;
-			g_clear_error(&err);
-			goto failed;
-		} else {
-			if (psm == 0)
-				bt_io_get(io, NULL, BT_IO_OPT_PSM, &psm,
-							BT_IO_OPT_INVALID);
-			l2cap->io = io;
-			l2cap->proto = BTPROTO_L2CAP;
-			l2cap->psm = psm;
-			l2cap->adapter = btd_adapter_ref(adapter);
-			ext->servers = g_slist_append(ext->servers, l2cap);
-			DBG("%s listening on PSM %u", ext->name, psm);
-		}
+		if (l2cap == NULL)
+			return 0;
 	}
 
 	if (ext->local_chan) {
@@ -1292,49 +1091,17 @@ static uint32_t ext_start_servers(struct ext_profile *ext,
 		else
 			chan = 0;
 
-		rfcomm = g_new0(struct ext_io, 1);
-		rfcomm->ext = ext;
-
-		io = bt_io_listen(connect, confirm, rfcomm, NULL, &err,
-					BT_IO_OPT_SOURCE_BDADDR,
-					adapter_get_address(adapter),
+		rfcomm = btd_server_listen(server, ext->authorize,
+					ext_accept_cb, ext_disconnect_cb,
 					BT_IO_OPT_CHANNEL, chan,
 					BT_IO_OPT_SEC_LEVEL, ext->sec_level,
 					BT_IO_OPT_INVALID);
-		if (err != NULL) {
-			error("RFCOMM server failed for %s: %s",
-						ext->name, err->message);
-			g_free(rfcomm);
-			rfcomm = NULL;
-			g_clear_error(&err);
-			goto failed;
-		} else {
-			if (chan == 0)
-				bt_io_get(io, NULL, BT_IO_OPT_CHANNEL, &chan,
-							BT_IO_OPT_INVALID);
-			rfcomm->io = io;
-			rfcomm->proto = BTPROTO_RFCOMM;
-			rfcomm->chan = chan;
-			rfcomm->adapter = btd_adapter_ref(adapter);
-			ext->servers = g_slist_append(ext->servers, rfcomm);
-			DBG("%s listening on chan %u", ext->name, chan);
-		}
+		if (rfcomm == NULL)
+			return 0;
 	}
 
 	return ext_register_record(ext, l2cap, rfcomm,
 						adapter_get_address(adapter));
-
-failed:
-	if (l2cap) {
-		ext->servers = g_slist_remove(ext->servers, l2cap);
-		ext_io_destroy(l2cap);
-	}
-	if (rfcomm) {
-		ext->servers = g_slist_remove(ext->servers, rfcomm);
-		ext_io_destroy(rfcomm);
-	}
-
-	return 0;
 }
 
 static struct ext_profile *find_ext(struct btd_profile *p)
@@ -1362,9 +1129,9 @@ static int ext_adapter_probe(struct btd_server *server)
 
 	DBG("\"%s\" probed", ext->name);
 
-	handle = ext_start_servers(ext, adapter);
+	handle = ext_start_servers(ext, server);
 	if (!handle)
-		return 0;
+		return -EIO;
 
 	rec = g_new0(struct ext_record, 1);
 	rec->adapter = btd_adapter_ref(adapter);
@@ -1401,7 +1168,6 @@ static void ext_adapter_remove(struct btd_server *server)
 	struct btd_adapter *adapter = btd_server_get_adapter(server);
 	struct btd_profile *p = btd_server_get_profile(server);
 	struct ext_profile *ext;
-	GSList *l, *next;
 
 	ext = find_ext(p);
 	if (!ext)
@@ -1410,18 +1176,6 @@ static void ext_adapter_remove(struct btd_server *server)
 	DBG("\"%s\" removed", ext->name);
 
 	ext_remove_records(ext, adapter);
-
-	for (l = ext->servers; l != NULL; l = next) {
-		struct ext_io *server = l->data;
-
-		next = g_slist_next(l);
-
-		if (server->adapter != adapter)
-			continue;
-
-		ext->servers = g_slist_remove(ext->servers, server);
-		ext_io_destroy(server);
-	}
 }
 
 static int ext_device_probe(struct btd_service *service)
@@ -1481,7 +1235,6 @@ static int connect_io(struct ext_io *conn, const bdaddr_t *src,
 	GIOChannel *io;
 
 	if (conn->psm) {
-		conn->proto = BTPROTO_L2CAP;
 		io = bt_io_connect(ext_connect, conn, NULL, &gerr,
 					BT_IO_OPT_SOURCE_BDADDR, src,
 					BT_IO_OPT_DEST_BDADDR, dst,
@@ -1489,7 +1242,6 @@ static int connect_io(struct ext_io *conn, const bdaddr_t *src,
 					BT_IO_OPT_PSM, conn->psm,
 					BT_IO_OPT_INVALID);
 	} else {
-		conn->proto = BTPROTO_RFCOMM;
 		io = bt_io_connect(ext_connect, conn, NULL, &gerr,
 					BT_IO_OPT_SOURCE_BDADDR, src,
 					BT_IO_OPT_DEST_BDADDR, dst,
@@ -1723,22 +1475,40 @@ static int ext_disconnect_dev(struct btd_service *service)
 	return 0;
 }
 
-static char *get_hfp_hf_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static uint16_t l2cap_psm(GIOChannel *io)
 {
-	return g_strdup_printf(HFP_HF_RECORD, rfcomm->chan, ext->version,
+	uint16_t psm;
+
+	bt_io_get(io, NULL, BT_IO_OPT_PSM, &psm, BT_IO_OPT_INVALID);
+
+	return psm;
+}
+
+static uint8_t rfcomm_chan(GIOChannel *io)
+{
+	uint8_t chan;
+
+	bt_io_get(io, NULL, BT_IO_OPT_CHANNEL, &chan, BT_IO_OPT_INVALID);
+
+	return chan;
+}
+
+static char *get_hfp_hf_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
+{
+	return g_strdup_printf(HFP_HF_RECORD, rfcomm_chan(rfcomm), ext->version,
 						ext->name, ext->features);
 }
 
-static char *get_hfp_ag_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_hfp_ag_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
-	return g_strdup_printf(HFP_AG_RECORD, rfcomm->chan, ext->version,
+	return g_strdup_printf(HFP_AG_RECORD, rfcomm_chan(rfcomm), ext->version,
 						ext->name, ext->features);
 }
 
-static char *get_spp_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_spp_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
 	char *svc, *rec;
 
@@ -1747,84 +1517,84 @@ static char *get_spp_record(struct ext_profile *ext, struct ext_io *l2cap,
 	else
 		svc = g_strdup("");
 
-	rec = g_strdup_printf(SPP_RECORD, svc, rfcomm->chan, ext->version,
-								ext->name);
+	rec = g_strdup_printf(SPP_RECORD, svc, rfcomm_chan(rfcomm),
+						ext->version, ext->name);
 	g_free(svc);
 	return rec;
 }
 
-static char *get_dun_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_dun_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
-	return g_strdup_printf(DUN_RECORD, rfcomm->chan, ext->version,
+	return g_strdup_printf(DUN_RECORD, rfcomm_chan(rfcomm), ext->version,
 								ext->name);
 }
 
-static char *get_pce_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_pce_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
 	return g_strdup_printf(PCE_RECORD, ext->version, ext->name);
 }
 
-static char *get_pse_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_pse_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
-	return g_strdup_printf(PSE_RECORD, rfcomm->chan, ext->version,
+	return g_strdup_printf(PSE_RECORD, rfcomm_chan(rfcomm), ext->version,
 								ext->name);
 }
 
-static char *get_mas_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_mas_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
-	return g_strdup_printf(MAS_RECORD, rfcomm->chan, ext->version,
+	return g_strdup_printf(MAS_RECORD, rfcomm_chan(rfcomm), ext->version,
 								ext->name);
 }
 
-static char *get_mns_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_mns_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
 	uint16_t psm = 0;
 	uint8_t chan = 0;
 
 	if (l2cap)
-		psm = l2cap->psm;
+		psm = l2cap_psm(l2cap);
 	if (rfcomm)
-		chan = rfcomm->chan;
+		chan = rfcomm_chan(rfcomm);
 
 	return g_strdup_printf(MNS_RECORD, chan, ext->version, ext->name, psm);
 }
 
-static char *get_sync_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_sync_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
-	return g_strdup_printf(SYNC_RECORD, rfcomm->chan, ext->version,
+	return g_strdup_printf(SYNC_RECORD, rfcomm_chan(rfcomm), ext->version,
 								ext->name);
 }
 
-static char *get_opp_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_opp_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
 	uint16_t psm = 0;
 	uint8_t chan = 0;
 
 	if (l2cap)
-		psm = l2cap->psm;
+		psm = l2cap_psm(l2cap);
 	if (rfcomm)
-		chan = rfcomm->chan;
+		chan = rfcomm_chan(rfcomm);
 
 	return g_strdup_printf(OPP_RECORD, chan, ext->version, psm, ext->name);
 }
 
-static char *get_ftp_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_ftp_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
 	uint16_t psm = 0;
 	uint8_t chan = 0;
 
 	if (l2cap)
-		psm = l2cap->psm;
+		psm = l2cap_psm(l2cap);
 	if (rfcomm)
-		chan = rfcomm->chan;
+		chan = rfcomm_chan(rfcomm);
 
 	return g_strdup_printf(FTP_RECORD, chan, ext->version, psm, ext->name);
 }
@@ -1844,8 +1614,8 @@ static char *get_ftp_record(struct ext_profile *ext, struct ext_io *l2cap,
 			</sequence>					\
 		</attribute>"
 
-static char *get_generic_record(struct ext_profile *ext, struct ext_io *l2cap,
-							struct ext_io *rfcomm)
+static char *get_generic_record(struct ext_profile *ext, GIOChannel *l2cap,
+							GIOChannel *rfcomm)
 {
 	char uuid_str[MAX_LEN_UUID_STR], svc_str[MAX_LEN_UUID_STR], psm[30];
 	char *rf_seq, *ver_attr, *rec;
@@ -1863,12 +1633,12 @@ static char *get_generic_record(struct ext_profile *ext, struct ext_io *l2cap,
 
 	if (l2cap)
 		snprintf(psm, sizeof(psm), "<uint16 value=\"0x%04x\" />",
-								l2cap->psm);
+							l2cap_psm(l2cap));
 	else
 		psm[0] = '\0';
 
 	if (rfcomm)
-		rf_seq = g_strdup_printf(RFCOMM_SEQ, rfcomm->chan);
+		rf_seq = g_strdup_printf(RFCOMM_SEQ, rfcomm_chan(rfcomm));
 	else
 		rf_seq = g_strdup("");
 
@@ -1898,8 +1668,7 @@ static struct default_settings {
 	bool		authorize;
 	bool		auto_connect;
 	char *		(*get_record)(struct ext_profile *ext,
-					struct ext_io *l2cap,
-					struct ext_io *rfcomm);
+					GIOChannel *l2cap, GIOChannel *rfcomm);
 	uint16_t	version;
 	uint16_t	features;
 } defaults[] = {
@@ -2253,7 +2022,6 @@ static void remove_ext(struct ext_profile *ext)
 
 	ext_remove_records(ext, NULL);
 
-	g_slist_free_full(ext->servers, ext_io_destroy);
 	g_slist_free_full(ext->conns, ext_io_destroy);
 
 	g_free(ext->remote_uuid);
