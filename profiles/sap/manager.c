@@ -29,29 +29,9 @@
 #include "device.h"
 #include "profile.h"
 #include "service.h"
-#include "../src/server.h"
 
 #include "manager.h"
 #include "server.h"
-
-static int sap_server_probe(struct btd_server *server)
-{
-	struct btd_adapter *adapter = btd_server_get_adapter(server);
-	const char *path = adapter_get_path(adapter);
-
-	DBG("path %s", path);
-
-	return sap_server_register(path, adapter_get_address(adapter));
-}
-
-static void sap_server_remove(struct btd_server *server)
-{
-	const char *path = adapter_get_path(btd_server_get_adapter(server));
-
-	DBG("path %s", path);
-
-	sap_server_unregister(path);
-}
 
 static struct btd_profile sap_profile = {
 	.name		= "sap-server",

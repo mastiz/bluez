@@ -20,5 +20,5 @@
 
 #include <gdbus/gdbus.h>
 
-int sap_server_register(const char *path, const bdaddr_t *src);
-void sap_server_unregister(const char *path);
+int sap_server_probe(struct btd_server *btd_server);
+void sap_server_remove(struct btd_server *btd_server);

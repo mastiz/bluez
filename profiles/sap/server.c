@@ -36,6 +36,8 @@
 #include "lib/uuid.h"
 #include "btio/btio.h"
 #include "adapter.h"
+#include "../src/device.h"
+#include "../src/server.h"
 #include "sdpd.h"
 #include "log.h"
 #include "error.h"
@@ -1340,12 +1342,17 @@ static void destroy_sap_interface(void *data)
 	server_remove(server);
 }
 
-int sap_server_register(const char *path, const bdaddr_t *src)
+int sap_server_probe(struct btd_server *btd_server)
 {
+	struct btd_adapter *adapter = btd_server_get_adapter(btd_server);
+	const char *path = adapter_get_path(adapter);
+	const bdaddr_t *src = adapter_get_address(adapter);
 	sdp_record_t *record = NULL;
 	GError *gerr = NULL;
 	GIOChannel *io;
 	struct sap_server *server;
+
+	DBG("path %s", path);
 
 	if (sap_init() < 0) {
 		error("Sap driver initialization failed.");
@@ -1405,8 +1412,12 @@ sdp_err:
 	return -1;
 }
 
-void sap_server_unregister(const char *path)
+void sap_server_remove(struct btd_server *btd_server)
 {
+	const char *path = adapter_get_path(btd_server_get_adapter(btd_server));
+
+	DBG("path %s", path);
+
 	g_dbus_unregister_interface(btd_get_dbus_connection(),
 						path, SAP_SERVER_INTERFACE);
 
