@@ -38,6 +38,7 @@
 #include "adapter.h"
 #include "../src/device.h"
 #include "../src/server.h"
+#include "../src/service.h"
 #include "sdpd.h"
 #include "log.h"
 #include "error.h"
@@ -77,7 +78,6 @@ struct sap_connection {
 struct sap_server {
 	char *path;
 	uint32_t record_id;
-	GIOChannel *listen_io;
 	struct sap_connection *conn;
 };
 
@@ -1101,21 +1101,6 @@ static gboolean sap_io_cb(GIOChannel *io, GIOCondition cond, gpointer data)
 
 	SAP_VDBG("conn %p io %p", conn, io);
 
-	if (cond & G_IO_NVAL) {
-		DBG("ERR (G_IO_NVAL) on rfcomm socket.");
-		return FALSE;
-	}
-
-	if (cond & G_IO_ERR) {
-		DBG("ERR (G_IO_ERR) on rfcomm socket.");
-		return FALSE;
-	}
-
-	if (cond & G_IO_HUP) {
-		DBG("HUP on rfcomm socket.");
-		return FALSE;
-	}
-
 	gstatus = g_io_channel_read_chars(io, buf, sizeof(buf) - 1,
 							&bytes_read, &gerr);
 	if (gstatus != G_IO_STATUS_NORMAL) {
@@ -1158,77 +1143,25 @@ static void sap_io_destroy(void *data)
 	sap_server_remove_conn(server);
 }
 
-static void sap_connect_cb(GIOChannel *io, GError *gerr, gpointer data)
+static int server_accept_cb(struct btd_connection *btd_conn)
 {
-	struct sap_server *server = data;
+	struct btd_server *btd_server = btd_connection_get_server(btd_conn);
+	struct sap_server *server = btd_server_get_user_data(btd_server);
 	struct sap_connection *conn = server->conn;
-
-	DBG("conn %p, io %p", conn, io);
-
-	if (!conn)
-		return;
-
-	/* Timer will shutdown the channel in case of lack of client
-	   activity */
-	start_guard_timer(server, SAP_TIMER_NO_ACTIVITY);
-
-	g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
-			G_IO_IN | G_IO_ERR | G_IO_HUP | G_IO_NVAL,
-			sap_io_cb, server, sap_io_destroy);
-}
-
-static void connect_auth_cb(DBusError *derr, void *data)
-{
-	struct sap_server *server = data;
-	struct sap_connection *conn = server->conn;
-	GError *gerr = NULL;
-
-	DBG("conn %p", conn);
-
-	if (!conn)
-		return;
-
-	if (derr && dbus_error_is_set(derr)) {
-		error("Access has been denied (%s)", derr->message);
-		sap_server_remove_conn(server);
-		return;
-	}
-
-	if (!bt_io_accept(conn->io, sap_connect_cb, server, NULL, &gerr)) {
-		error("bt_io_accept: %s", gerr->message);
-		g_error_free(gerr);
-		sap_server_remove_conn(server);
-		return;
-	}
-
-	DBG("Access has been granted.");
-}
-
-static void connect_confirm_cb(GIOChannel *io, gpointer data)
-{
-	struct sap_server *server = data;
-	struct sap_connection *conn = server->conn;
-	GError *gerr = NULL;
-	bdaddr_t src, dst;
-	char dstaddr[18];
-	guint ret;
+	GIOChannel *io = btd_connection_get_io(btd_conn);
 
 	DBG("conn %p io %p", conn, io);
 
-	if (!io)
-		return;
-
 	if (conn) {
 		DBG("Another SAP connection already exists.");
-		g_io_channel_shutdown(io, TRUE, NULL);
-		return;
+		return -EALREADY;
 	}
 
 	conn = g_try_new0(struct sap_connection, 1);
 	if (!conn) {
 		error("Can't allocate memory for incoming SAP connection.");
 		g_io_channel_shutdown(io, TRUE, NULL);
-		return;
+		return -ENOMEM;
 	}
 
 	g_io_channel_set_encoding(io, NULL, NULL);
@@ -1238,28 +1171,14 @@ static void connect_confirm_cb(GIOChannel *io, gpointer data)
 	conn->io = g_io_channel_ref(io);
 	conn->state = SAP_STATE_DISCONNECTED;
 
-	bt_io_get(io, &gerr,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_INVALID);
-	if (gerr) {
-		error("%s", gerr->message);
-		g_error_free(gerr);
-		sap_server_remove_conn(server);
-		return;
-	}
+	/* Timer will shutdown the channel in case of lack of client
+	   activity */
+	start_guard_timer(server, SAP_TIMER_NO_ACTIVITY);
 
-	ba2str(&dst, dstaddr);
+	g_io_add_watch_full(io, G_PRIORITY_DEFAULT,
+				G_IO_IN, sap_io_cb, server, sap_io_destroy);
 
-	ret = btd_request_authorization(&src, &dst, SAP_UUID, connect_auth_cb,
-								server);
-	if (ret == 0) {
-		error("Authorization failure");
-		sap_server_remove_conn(server);
-		return;
-	}
-
-	DBG("Authorizing incoming SAP connection from %s", dstaddr);
+	return 0;
 }
 
 static DBusMessage *disconnect(DBusConnection *conn, DBusMessage *msg,
@@ -1322,12 +1241,6 @@ static void server_remove(struct sap_server *server)
 
 	remove_record_from_server(server->record_id);
 
-	if (server->listen_io) {
-		g_io_channel_shutdown(server->listen_io, TRUE, NULL);
-		g_io_channel_unref(server->listen_io);
-		server->listen_io = NULL;
-	}
-
 	g_free(server->path);
 	g_free(server);
 }
@@ -1348,7 +1261,6 @@ int sap_server_probe(struct btd_server *btd_server)
 	const char *path = adapter_get_path(adapter);
 	const bdaddr_t *src = adapter_get_address(adapter);
 	sdp_record_t *record = NULL;
-	GError *gerr = NULL;
 	GIOChannel *io;
 	struct sap_server *server;
 
@@ -1375,19 +1287,11 @@ int sap_server_probe(struct btd_server *btd_server)
 	server->path = g_strdup(path);
 	server->record_id = record->handle;
 
-	io = bt_io_listen(NULL, connect_confirm_cb, server,
-			NULL, &gerr,
-			BT_IO_OPT_SOURCE_BDADDR, src,
+	io = btd_server_listen(btd_server, true, server_accept_cb, NULL,
 			BT_IO_OPT_CHANNEL, SAP_SERVER_CHANNEL,
 			BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_HIGH,
 			BT_IO_OPT_MASTER, TRUE,
 			BT_IO_OPT_INVALID);
-	if (!io) {
-		error("Can't listen at channel %d.", SAP_SERVER_CHANNEL);
-		g_error_free(gerr);
-		goto server_err;
-	}
-	server->listen_io = io;
 
 	if (!g_dbus_register_interface(btd_get_dbus_connection(),
 					server->path, SAP_SERVER_INTERFACE,
@@ -1398,6 +1302,8 @@ int sap_server_probe(struct btd_server *btd_server)
 							SAP_SERVER_INTERFACE);
 		goto server_err;
 	}
+
+	btd_server_set_user_data(btd_server, server);
 
 	DBG("server %p, listen socket 0x%02x", server,
 						g_io_channel_unix_get_fd(io));
