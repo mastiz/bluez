@@ -1491,10 +1491,8 @@ GIOChannel *bt_io_listen(BtIOConnect connect, BtIOConfirm confirm,
 				gpointer user_data, GDestroyNotify destroy,
 				GError **err, BtIOOption opt1, ...)
 {
-	GIOChannel *io;
 	va_list args;
 	struct BtIOSetOpts opts;
-	int sock;
 	gboolean ret;
 
 	va_start(args, opt1);
@@ -1505,15 +1503,26 @@ GIOChannel *bt_io_listen(BtIOConnect connect, BtIOConfirm confirm,
 	if (ret == FALSE)
 		return NULL;
 
-	io = create_io(TRUE, &opts, err);
+	return bt_io_listen_opts(connect, confirm, user_data, destroy, err,
+									&opts);
+}
+
+GIOChannel *bt_io_listen_opts(BtIOConnect connect, BtIOConfirm confirm,
+				gpointer user_data, GDestroyNotify destroy,
+				GError **err, struct BtIOSetOpts *opts)
+{
+	GIOChannel *io;
+	int sock;
+
+	io = create_io(TRUE, opts, err);
 	if (io == NULL)
 		return NULL;
 
 	sock = g_io_channel_unix_get_fd(io);
 
 	if (confirm)
-		setsockopt(sock, SOL_BLUETOOTH, BT_DEFER_SETUP, &opts.defer,
-							sizeof(opts.defer));
+		setsockopt(sock, SOL_BLUETOOTH, BT_DEFER_SETUP, &opts->defer,
+							sizeof(opts->defer));
 
 	if (listen(sock, 5) < 0) {
 		ERROR_FAILED(err, "listen", errno);

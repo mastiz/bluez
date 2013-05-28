@@ -105,4 +105,8 @@ GIOChannel *bt_io_listen(BtIOConnect connect, BtIOConfirm confirm,
 				gpointer user_data, GDestroyNotify destroy,
 				GError **err, BtIOOption opt1, ...);
 
+GIOChannel *bt_io_listen_opts(BtIOConnect connect, BtIOConfirm confirm,
+				gpointer user_data, GDestroyNotify destroy,
+				GError **err, struct BtIOSetOpts *opts);
+
 #endif
