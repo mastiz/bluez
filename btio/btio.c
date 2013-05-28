@@ -1431,10 +1431,8 @@ GIOChannel *bt_io_connect(BtIOConnect connect, gpointer user_data,
 				GDestroyNotify destroy, GError **gerr,
 				BtIOOption opt1, ...)
 {
-	GIOChannel *io;
 	va_list args;
 	struct BtIOSetOpts opts;
-	int err, sock;
 	gboolean ret;
 
 	va_start(args, opt1);
@@ -1445,26 +1443,36 @@ GIOChannel *bt_io_connect(BtIOConnect connect, gpointer user_data,
 	if (ret == FALSE)
 		return NULL;
 
-	io = create_io(FALSE, &opts, gerr);
+	return bt_io_connect_opts(connect, user_data, destroy, gerr, &opts);
+}
+
+GIOChannel *bt_io_connect_opts(BtIOConnect connect, gpointer user_data,
+				GDestroyNotify destroy, GError **gerr,
+				struct BtIOSetOpts *opts)
+{
+	GIOChannel *io;
+	int err, sock;
+
+	io = create_io(FALSE, opts, gerr);
 	if (io == NULL)
 		return NULL;
 
 	sock = g_io_channel_unix_get_fd(io);
 
-	switch (opts.type) {
+	switch (opts->type) {
 	case BT_IO_L2CAP:
-		err = l2cap_connect(sock, &opts.dst, opts.dst_type,
-							opts.psm, opts.cid);
+		err = l2cap_connect(sock, &opts->dst, opts->dst_type,
+							opts->psm, opts->cid);
 		break;
 	case BT_IO_RFCOMM:
-		err = rfcomm_connect(sock, &opts.dst, opts.channel);
+		err = rfcomm_connect(sock, &opts->dst, opts->channel);
 		break;
 	case BT_IO_SCO:
-		err = sco_connect(sock, &opts.dst);
+		err = sco_connect(sock, &opts->dst);
 		break;
 	default:
 		g_set_error(gerr, BT_IO_ERROR, EINVAL,
-					"Unknown BtIO type %d", opts.type);
+					"Unknown BtIO type %d", opts->type);
 		return NULL;
 	}
 
