@@ -60,7 +60,7 @@ typedef enum {
 	BT_IO_INVALID,
 } BtIOType;
 
-struct set_opts {
+struct BtIOSetOpts {
 	bdaddr_t src;
 	bdaddr_t dst;
 	BtIOType type;
@@ -748,7 +748,7 @@ static gboolean sco_set(int sock, uint16_t mtu, GError **err)
 	return TRUE;
 }
 
-static void reset_set_opts(struct set_opts *opts)
+static void reset_set_opts(struct BtIOSetOpts *opts)
 {
 	memset(opts, 0, sizeof(*opts));
 
@@ -763,7 +763,30 @@ static void reset_set_opts(struct set_opts *opts)
 	opts->dst_type = BDADDR_BREDR;
 }
 
-static gboolean parse_set_opts(struct set_opts *opts, GError **err,
+struct BtIOSetOpts *bt_io_set_opts_new(void)
+{
+	struct BtIOSetOpts *opts;
+
+	opts = g_new(struct BtIOSetOpts, 1);
+	reset_set_opts(opts);
+
+	return opts;
+}
+
+gboolean bt_io_set_opts_parse(struct BtIOSetOpts *opts, GError **err,
+						BtIOOption opt1, ...)
+{
+	va_list args;
+	gboolean ret;
+
+	va_start(args, opt1);
+	ret = bt_io_set_opts_parse_valist(opts, err, opt1, args);
+	va_end(args);
+
+	return ret;
+}
+
+gboolean bt_io_set_opts_parse_valist(struct BtIOSetOpts *opts, GError **err,
 						BtIOOption opt1, va_list args)
 
 {
@@ -1289,13 +1312,13 @@ gboolean bt_io_set(GIOChannel *io, GError **err, BtIOOption opt1, ...)
 {
 	va_list args;
 	gboolean ret;
-	struct set_opts opts;
+	struct BtIOSetOpts opts;
 	int sock;
 	BtIOType type;
 
 	va_start(args, opt1);
 	reset_set_opts(&opts);
-	ret = parse_set_opts(&opts, err, opt1, args);
+	ret = bt_io_set_opts_parse_valist(&opts, err, opt1, args);
 	va_end(args);
 
 	if (!ret)
@@ -1341,7 +1364,7 @@ gboolean bt_io_get(GIOChannel *io, GError **err, BtIOOption opt1, ...)
 	return ret;
 }
 
-static GIOChannel *create_io(gboolean server, struct set_opts *opts,
+static GIOChannel *create_io(gboolean server, struct BtIOSetOpts *opts,
 								GError **err)
 {
 	int sock;
@@ -1410,13 +1433,13 @@ GIOChannel *bt_io_connect(BtIOConnect connect, gpointer user_data,
 {
 	GIOChannel *io;
 	va_list args;
-	struct set_opts opts;
+	struct BtIOSetOpts opts;
 	int err, sock;
 	gboolean ret;
 
 	va_start(args, opt1);
 	reset_set_opts(&opts);
-	ret = parse_set_opts(&opts, gerr, opt1, args);
+	ret = bt_io_set_opts_parse_valist(&opts, gerr, opt1, args);
 	va_end(args);
 
 	if (ret == FALSE)
@@ -1462,13 +1485,13 @@ GIOChannel *bt_io_listen(BtIOConnect connect, BtIOConfirm confirm,
 {
 	GIOChannel *io;
 	va_list args;
-	struct set_opts opts;
+	struct BtIOSetOpts opts;
 	int sock;
 	gboolean ret;
 
 	va_start(args, opt1);
 	reset_set_opts(&opts);
-	ret = parse_set_opts(&opts, err, opt1, args);
+	ret = bt_io_set_opts_parse_valist(&opts, err, opt1, args);
 	va_end(args);
 
 	if (ret == FALSE)

@@ -76,6 +76,16 @@ typedef void (*BtIOConfirm)(GIOChannel *io, gpointer user_data);
 
 typedef void (*BtIOConnect)(GIOChannel *io, GError *err, gpointer user_data);
 
+struct BtIOSetOpts;
+
+struct BtIOSetOpts *bt_io_set_opts_new(void);
+
+gboolean bt_io_set_opts_parse(struct BtIOSetOpts *opts, GError **err,
+					BtIOOption opt1, ...);
+
+gboolean bt_io_set_opts_parse_valist(struct BtIOSetOpts *opts, GError **err,
+					BtIOOption opt1, va_list args);
+
 gboolean bt_io_accept(GIOChannel *io, BtIOConnect connect, gpointer user_data,
 					GDestroyNotify destroy, GError **err);
 
