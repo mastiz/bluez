@@ -50,6 +50,7 @@
 #include "../src/adapter.h"
 #include "../src/device.h"
 #include "../src/profile.h"
+#include "../src/service.h"
 #include "../src/server.h"
 
 #include "device.h"
@@ -332,7 +333,6 @@ struct avdtp_remote_sep {
 
 struct avdtp_server {
 	struct btd_adapter *adapter;
-	GIOChannel *io;
 	GSList *seps;
 	GSList *sessions;
 };
@@ -2461,31 +2461,15 @@ static void auth_cb(DBusError *derr, void *user_data)
 	session->stream_setup = TRUE;
 }
 
-static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
+static int avdtp_accept_cb(struct btd_connection *conn)
 {
+	struct btd_service *service = btd_connection_get_service(conn);
+	struct btd_device *device = btd_service_get_device(service);
 	struct avdtp *session;
 	struct audio_device *dev;
+	GIOChannel *chan = btd_connection_get_io(conn);
 	char address[18];
 	bdaddr_t src, dst;
-	GError *err = NULL;
-	struct btd_device *device;
-
-	bt_io_get(chan, &err,
-			BT_IO_OPT_SOURCE_BDADDR, &src,
-			BT_IO_OPT_DEST_BDADDR, &dst,
-			BT_IO_OPT_DEST, address,
-			BT_IO_OPT_INVALID);
-	if (err) {
-		error("%s", err->message);
-		g_error_free(err);
-		goto drop;
-	}
-
-	DBG("AVDTP: incoming connect from %s", address);
-
-	device = adapter_find_device(adapter_find(&src), &dst);
-	if (!device)
-		goto drop;
 
 	session = avdtp_get_internal(device);
 	if (!session)
@@ -2505,7 +2489,7 @@ static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
 	if (session->pending_open && session->pending_open->open_acp) {
 		if (!bt_io_accept(chan, avdtp_connect_cb, session, NULL, NULL))
 			goto drop;
-		return;
+		return 0;
 	}
 
 	if (session->io) {
@@ -2538,10 +2522,10 @@ static void avdtp_confirm_cb(GIOChannel *chan, gpointer data)
 		goto drop;
 	}
 
-	return;
+	return 0;
 
 drop:
-	g_io_channel_shutdown(chan, TRUE, NULL);
+	return -EIO;
 }
 
 static GIOChannel *l2cap_connect(struct avdtp *session)
@@ -3775,26 +3759,6 @@ int avdtp_unregister_sep(struct avdtp_local_sep *sep)
 	return 0;
 }
 
-static GIOChannel *avdtp_server_socket(const bdaddr_t *src)
-{
-	GError *err = NULL;
-	GIOChannel *io;
-
-	io = bt_io_listen(NULL, avdtp_confirm_cb,
-				NULL, NULL, &err,
-				BT_IO_OPT_SOURCE_BDADDR, src,
-				BT_IO_OPT_PSM, AVDTP_PSM,
-				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_MEDIUM,
-				BT_IO_OPT_MASTER, master,
-				BT_IO_OPT_INVALID);
-	if (!io) {
-		error("%s", err->message);
-		g_error_free(err);
-	}
-
-	return io;
-}
-
 const char *avdtp_strerror(struct avdtp_error *err)
 {
 	if (err->category == AVDTP_ERRNO)
@@ -3864,8 +3828,13 @@ static int avdtp_server_probe(struct btd_server *btd_server)
 
 	server = g_new0(struct avdtp_server, 1);
 
-	server->io = avdtp_server_socket(adapter_get_address(adapter));
-	if (!server->io) {
+	/* FIXME: are abrupt disconnections handled? */
+	if (btd_server_listen(btd_server, false,
+				avdtp_accept_cb, NULL,
+				BT_IO_OPT_PSM, AVDTP_PSM,
+				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_MEDIUM,
+				BT_IO_OPT_MASTER, master,
+				BT_IO_OPT_INVALID) == NULL) {
 		g_free(server);
 		return -1;
 	}
@@ -3889,9 +3858,6 @@ static void avdtp_server_remove(struct btd_server *btd_server)
 		return;
 
 	g_slist_free_full(server->sessions, avdtp_free);
-
-	g_io_channel_shutdown(server->io, TRUE, NULL);
-	g_io_channel_unref(server->io);
 	btd_adapter_unref(server->adapter);
 	g_free(server);
 }
