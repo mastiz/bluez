@@ -276,16 +276,14 @@ static void sco_connect_cb(GIOChannel *chan, GError *err, gpointer user_data)
 
 	DBG("at the begin of sco_connect_cb() in gateway.c");
 
-	gw->sco = g_io_channel_ref(chan);
-
-	gw->sco_id = g_io_add_watch(gw->sco, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
-						(GIOFunc) sco_io_cb, dev);
-
 	if (err) {
 		error("sco_connect_cb(): %s", err->message);
 		gateway_suspend_stream(dev);
 		return;
 	}
+
+	gw->sco_id = g_io_add_watch(gw->sco, G_IO_ERR | G_IO_HUP | G_IO_NVAL,
+						(GIOFunc) sco_io_cb, dev);
 
 	change_state(dev, GATEWAY_STATE_PLAYING);
 	run_connect_cb(dev, NULL);
@@ -939,18 +937,17 @@ unsigned int gateway_request_stream(struct audio_device *dev,
 {
 	struct gateway *gw = dev->gateway;
 	GError *err = NULL;
-	GIOChannel *io;
 
 	if (!gw->rfcomm) {
 		if (get_records(dev) < 0)
 			return 0;
 	} else if (!gw->sco) {
-		io = bt_io_connect(BT_IO_SCO, sco_connect_cb, dev, NULL, &err,
-				BT_IO_OPT_SOURCE_BDADDR, &dev->src,
+		gw->sco = bt_io_connect(BT_IO_SCO, sco_connect_cb, dev, NULL,
+				&err, BT_IO_OPT_SOURCE_BDADDR, &dev->src,
 				BT_IO_OPT_DEST_BDADDR, &dev->dst,
 				BT_IO_OPT_SEC_LEVEL, BT_IO_SEC_MEDIUM,
 				BT_IO_OPT_INVALID);
-		if (!io) {
+		if (!gw->sco) {
 			error("%s", err->message);
 			g_error_free(err);
 			return 0;
@@ -1005,8 +1002,10 @@ void gateway_suspend_stream(struct audio_device *dev)
 	if (!gw || !gw->sco)
 		return;
 
-	g_source_remove(gw->sco_id);
-	gw->sco_id = 0;
+	if (gw->sco_id) {
+		g_source_remove(gw->sco_id);
+		gw->sco_id = 0;
+	}
 
 	g_io_channel_shutdown(gw->sco, TRUE, NULL);
 	g_io_channel_unref(gw->sco);
