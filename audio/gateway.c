@@ -110,7 +110,7 @@ static const char *state2str(gateway_state_t state)
 	}
 }
 
-static void agent_free(struct hf_agent *agent)
+static void agent_free(DBusConnection *conn, struct hf_agent *agent)
 {
 	if (!agent)
 		return;
@@ -118,6 +118,7 @@ static void agent_free(struct hf_agent *agent)
 	if (agent->call)
 		dbus_pending_call_unref(agent->call);
 
+	g_dbus_remove_watch(conn, agent->watch);
 	g_free(agent->name);
 	g_free(agent->path);
 	g_free(agent);
@@ -707,7 +708,8 @@ static void agent_exited(DBusConnection *conn, void *data)
 
 	DBG("Agent %s exited", agent->name);
 
-	agent_free(agent);
+	agent->watch = 0;
+	agent_free(conn, agent);
 	gateway->agent = NULL;
 }
 
@@ -792,9 +794,7 @@ static DBusMessage *unregister_agent(DBusConnection *conn,
 	if (strcmp(gw->agent->path, path) != 0)
 		return btd_error_does_not_exist(msg);
 
-	g_dbus_remove_watch(device->conn, gw->agent->watch);
-
-	agent_free(gw->agent);
+	agent_free(device->conn, gw->agent);
 	gw->agent = NULL;
 
 done:
@@ -828,6 +828,7 @@ static void path_unregister(void *data)
 		AUDIO_GATEWAY_INTERFACE, dev->path);
 
 	gateway_close(dev);
+	agent_free(dev->conn, dev->gateway->agent);
 
 	g_free(dev->gateway);
 	dev->gateway = NULL;
